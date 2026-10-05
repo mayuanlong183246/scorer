@@ -1,0 +1,58 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<root BTCPP_format="4">
+  <BehaviorTree ID="sentry_tactical">
+    <TacticalDispatch>
+      <SubTree ID="tactical_hold_safe" />
+      <SubTree ID="tactical_cover_teammate" />
+      <SubTree ID="tactical_attack_outpost" />
+      <SubTree ID="tactical_resupply_home" />
+      <SubTree ID="tactical_defend_home" />
+      <SubTree ID="tactical_capture_point" />
+      <SubTree ID="tactical_gather_info" />
+    </TacticalDispatch>
+  </BehaviorTree>
+  <BehaviorTree ID="tactical_hold_safe">
+    <TacticalWait mode="hold" duration_ms="0" />
+  </BehaviorTree>
+  <BehaviorTree ID="tactical_cover_teammate">
+    <Sequence>
+      <CalculateTeammateCoverGoal hp="{@referee_allRobotHP}" positions="{@referee_groundRobotPosition}" team_color="{@team_color}" sentry_robot_id="{@sentry_robot_id}" hp_threshold="{@cover_teammate_hp_threshold}" data_timeout_ms="{@teammate_data_timeout_ms}" home_reference_x="{@cover_home_reference_x}" home_reference_y="{@cover_home_reference_y}" rear_distance="{@cover_rear_distance}" side_offset="{@cover_side_offset}" side_sign="{@cover_side_sign}" goal="{cover_goal}" target_id="{cover_target_id}" />
+      <TacticalNavigateToPose goal="{cover_goal}" action_name="navigate_to_pose" timeout_ms="{@navigation_timeout_ms}" />
+      <TacticalWait mode="dwell" duration_ms="{@cover_dwell_ms}" />
+    </Sequence>
+  </BehaviorTree>
+  <BehaviorTree ID="tactical_attack_outpost">
+    <Sequence>
+      <IsOutpostAlive hp="{@referee_allRobotHP}" team_color="{@team_color}" min_hp="{@outpost_alive_min_hp}" />
+      <TacticalNavigateToPose goal="{@outpost_attack_goal}" action_name="navigate_to_pose" timeout_ms="{@navigation_timeout_ms}" />
+      <TacticalWait mode="outpost" duration_ms="{@outpost_attack_timeout_ms}" />
+    </Sequence>
+  </BehaviorTree>
+  <BehaviorTree ID="tactical_resupply_home">
+    <Sequence>
+      <TacticalNavigateToPose goal="{@resupply_goal}" action_name="navigate_to_pose" timeout_ms="{@navigation_timeout_ms}" />
+      <TacticalWait mode="resupply" duration_ms="{@resupply_timeout_ms}" />
+    </Sequence>
+  </BehaviorTree>
+  <BehaviorTree ID="tactical_defend_home">
+    <Sequence>
+      <SelectDefenseGoal event="{@referee_eventData}" base_hp_threshold="{@base_hp_low}" base_goal="{@defend_base_goal}" fortress_goal="{@defend_fortress_goal}" goal="{defense_goal}" />
+      <TacticalNavigateToPose goal="{defense_goal}" action_name="navigate_to_pose" timeout_ms="{@navigation_timeout_ms}" />
+      <TacticalWait mode="dwell" duration_ms="{@defend_dwell_ms}" />
+    </Sequence>
+  </BehaviorTree>
+  <BehaviorTree ID="tactical_capture_point">
+    <Sequence>
+      <TacticalNavigateToPose goal="{@capture_point_a_goal}" action_name="navigate_to_pose" timeout_ms="{@navigation_timeout_ms}" />
+      <TacticalWait mode="dwell" duration_ms="{@capture_point_a_dwell_ms}" />
+      <TacticalNavigateToPose goal="{@capture_point_b_goal}" action_name="navigate_to_pose" timeout_ms="{@navigation_timeout_ms}" />
+      <TacticalWait mode="dwell" duration_ms="{@capture_point_b_dwell_ms}" />
+    </Sequence>
+  </BehaviorTree>
+  <BehaviorTree ID="tactical_gather_info">
+    <Sequence>
+      <TacticalNavigateToPose goal="{@gather_info_goal}" action_name="navigate_to_pose" timeout_ms="{@navigation_timeout_ms}" />
+      <TacticalWait mode="gather" duration_ms="{@gather_info_dwell_ms}" />
+    </Sequence>
+  </BehaviorTree>
+</root>

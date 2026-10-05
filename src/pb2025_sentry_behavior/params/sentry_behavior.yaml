@@ -1,0 +1,98 @@
+pb2025_sentry_behavior_server:
+  ros__parameters:
+    use_sim_time: true
+    action_name: pb2025_sentry_behavior         # Optional
+    tick_frequency: 5                          # Optional (defaults to 100 Hz)
+    groot2_port: 1668                           # Optional (defaults to 1667)
+    ros_plugins_timeout: 2000                   # Optional (defaults 1000 ms)
+    use_cout_logger: false                      # Optional (defaults to false)
+    mapping_bootstrap_enabled: false
+    tactical_decision_topic: /tactical_decision
+    decision_timeout_ms: 1000
+    team_color: blue
+    sentry_robot_id: 7
+    teammate_data_timeout_ms: 500
+    cover_teammate_hp_threshold: 250
+    outpost_alive_min_hp: 1
+    cover_home_reference_x: 0.0
+    cover_home_reference_y: 0.0
+    cover_rear_distance: 1.5
+    cover_side_offset: 1.0
+    cover_side_sign: 1.0
+    outpost_attack_goal: "5.70;-2.93;0.0"
+    resupply_goal: "-0.90;-6.00;0.0"
+    defend_base_goal: "2.70;-0.53;0.0"
+    defend_fortress_goal: "4.80;-2.00;0.0"
+    capture_point_a_goal: "8.65;-3.50;0.0"
+    capture_point_b_goal: "4.00;3.00;0.0"
+    capture_point_a_dwell_ms: 10000
+    capture_point_b_dwell_ms: 10000
+    gather_info_goal: "5.42;-3.41;0.0"
+    gather_info_dwell_ms: 5000  # Continuous time without a fresh target lock
+    navigation_timeout_ms: 60000
+    navigation_cancel_timeout_ms: 2000
+    action_failure_cooldown_ms: 5000
+    cover_dwell_ms: 10000
+    outpost_attack_timeout_ms: 60000
+    resupply_timeout_ms: 30000
+    resupply_hp_target: 400
+    resupply_ammo_target: 150
+    defend_dwell_ms: 10000
+    target_locked_topic: /auto_aim/target_locked
+    target_locked_timeout_ms: 1000
+    referee_data_timeout_ms: 1000
+    base_hp_low: 5000
+
+    plugins:
+      - pb2025_sentry_behavior/bt_plugins
+
+    behavior_trees:
+      - pb2025_sentry_behavior/behavior_trees
+
+    CalculateAttackPose:
+      attack_radius: 2.0                        # 攻击半径（米）
+      num_sectors: 36                           # 扇区划分数量
+      cost_threshold: 50                        # 栅格的占用概率，大于该值将被视为障碍物 [0, 100]
+      robot_base_frame: chassis
+      visualize: true
+
+pb2025_sentry_behavior_client:
+  ros__parameters:
+    use_sim_time: true
+    target_tree: sentry_tactical
+
+tactical_scorer_node:
+  ros__parameters:
+    use_sim_time: true
+    tick_hz: 5.0
+    decision_timeout_ms: 1000
+    mapping_bootstrap_enabled: false
+    action_failure_cooldown_ms: 5000
+    hp_low: 180
+    ammo_low: 50
+    hp_critical: 100
+    ammo_critical: 10
+    heat_low_ratio: 0.80
+    heat_critical_ratio: 0.95
+    # Game, robot and base/fortress event data are mandatory safety inputs.
+    referee_data_timeout_ms: 1000
+    base_hp_low: 5000
+    target_lost_timeout_ms: 800
+    decision_topic: /tactical_decision
+    team_color: blue
+    sentry_robot_id: 7
+    teammate_data_timeout_ms: 500
+    cover_teammate_hp_threshold: 250
+    outpost_alive_min_hp: 1
+    outpost_reference_hp: 1800
+    decision_hold_ms: 500
+    action_switch_margin: 0.08
+    # Action importance uses TacticalDecision action IDs in this order:
+    # HOLD_SAFE, COVER_TEAMMATE, ATTACK_OUTPOST, RESUPPLY_HOME,
+    # DEFEND_HOME, CAPTURE_POINT, GATHER_INFO.
+    # score = importance * geometric_mean(active factors)
+    # HP/ammo readiness rises linearly from critical to low; heat readiness
+    # falls linearly from heat_low_ratio to heat_critical_ratio.
+    # Resource readiness is their minimum; resupply need is its inverse.
+    action_importance: [0.05, 0.72, 0.78, 0.90, 0.82, 0.62, 0.58]
+    # Failed actions are unavailable during action_failure_cooldown_ms.

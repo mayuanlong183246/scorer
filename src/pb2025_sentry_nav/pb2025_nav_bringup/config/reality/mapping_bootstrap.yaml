@@ -1,0 +1,11 @@
+mapping_mission_manager:
+  ros__parameters:
+    enabled: true
+    game_start_progress: 4
+    bootstrap_timeout_sec: 20.0
+    pcd_save_path: "/home/simon/Pursue_MPPI_fastlio/src/pb2025_sentry_nav/pb2025_nav_bringup/pcd/scans.pcd"
+    grid_map_save_path: "/home/fwy/Pursue_MPPI_fastlio/src/pb2025_sentry_nav/pb2025_nav_bringup/map/reality/map01"
+    behavior_tree_name: "rmul_nuc_2026"
+    goal1: [2.0, 0.0, 0.0]
+    goal2: [8.65, -3.5, 0.0]
+    goal3: [4.0, 3.0, 0.0]

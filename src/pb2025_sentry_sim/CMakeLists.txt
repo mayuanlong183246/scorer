@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.16)
+project(pb2025_sentry_sim)
+find_package(ament_cmake REQUIRED)
+install(DIRECTORY launch config maps DESTINATION share/${PROJECT_NAME})
+install(PROGRAMS scripts/sim_adapter.py scripts/tactical_sim_coordinator.py scripts/make_field_map.py DESTINATION lib/${PROJECT_NAME})
+install(FILES UPSTREAM.md DESTINATION share/${PROJECT_NAME})
+ament_package()

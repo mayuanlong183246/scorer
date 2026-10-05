@@ -1,0 +1,155 @@
+/**:
+    ros__parameters:
+        # 是否使用先验地图定位模式。
+        # false: 正常在线建图 / 里程计模式。
+        # true : 读取 prior_map_path 指向的 PCD 作为先验地图，并等待外部初始位姿。
+        locate_in_prior_map: false
+
+        # 先验地图路径，仅在 locate_in_prior_map=true 时使用。
+        prior_map_path: "/home/sentry_ws/src/FAST_LIO/PCD/CC#3.pcd"
+
+        # 是否启用特征提取。
+        # 当前项目主链路更接近 FAST-LIO2 直接法，通常保持 false。
+        feature_extract_enable: false
+
+        # 点云预处理抽点步长。数值越大，点越稀疏，计算量越小，但几何信息也更少。
+        point_filter_num: 3
+
+        # ESIKF / 点云匹配的最大迭代次数。
+        max_iteration: 3
+
+        # 当前帧点云体素下采样尺寸，单位 m。
+        filter_size_surf: 0.5
+
+        # 地图体素下采样尺寸，单位 m。
+        filter_size_map: 0.5
+
+        # 局部地图窗口边长，单位 m。
+        cube_side_length: 1000.0
+
+        # 是否输出运行位置日志到文件。
+        runtime_pos_log_enable: false
+
+        # 保存地图时使用的目标 PCD 路径。
+        map_file_path: "./test.pcd"
+
+        common:
+            # 里程计世界系名称。通常保持 odom。
+            odom_frame_id: "lio_odom"
+
+            # FAST-LIO 当前内部主参考 LiDAR 坐标系名称。
+            # 当前工程采用“右雷达为主雷达”的双 MID360 方案：
+            # 1. 右雷达点云保持在 right_lidar 系进入主链路；
+            # 2. 左雷达点云先通过 TF 变换到 right_lidar 系；
+            # 3. 融合后的整帧点云仍保持在 right_lidar 系，再由 mapping.extrinsic_T/R 与右雷达内置 IMU 绑定。
+            sensor_frame_id: "imu_link"
+
+            # 机器人底盘坐标系名称，供 TF 和导航栈使用。
+            # 当前工程统一对外发布到 base_footprint。
+            base_frame_id: "base_footprint"
+
+            # 是否把 /Odometry 输出姿态从 sensor_frame_id 转换为 base_frame_id 再发布 TF。
+            # 当前配置为 true，表示最终对外发布的是 odom -> base_footprint，
+            # 而不是 odom -> right_lidar。
+            # 当前代码中该转换按三连乘完成：
+            #   T_odom_base = T_odom_imu * T_imu_lidar * T_lidar_base
+            send_odom_base_tf: false
+
+            # 单雷达兼容入口，双雷达模式下仅作保留，不是主订阅入口。
+            lid_topic: "/livox/lidar_192_168_1_151"
+
+            # 主雷达（Primary / 151）点云话题。
+            lid_topic_right: "/livox/lidar_192_168_1_151"
+
+            # 副雷达（Secondary / 159）点云话题。
+            lid_topic_left: "/livox/lidar_192_168_1_159"
+
+            # 主 IMU 话题，来自右雷达内置 IMU。
+            imu_topic: "/livox/imu_192_168_1_151"
+
+            # 仅当无法做到硬件时间同步时才考虑开启软件时间同步。
+            time_sync_en: false
+
+            # LiDAR 到 IMU 的固定时间偏移，单位秒。
+            # 若没有经过离线标定得到明确偏差，保持 0.0。
+            time_offset_lidar_to_imu: 0.0
+
+        preprocess:
+            # 1=Livox, 2=Velodyne, 3=Ouster, 4=通用 PointCloud2 输入。
+            lidar_type: 1
+
+            # Livox MID360 常用扫描线配置。
+            scan_line: 4
+
+            # 近距离盲区半径，单位 m。小于该距离的点将被滤掉。
+            blind: 0.5
+
+            # 车身近处点云裁切开关。true 时在前端预处理阶段过滤裁切盒内点。
+            crop_body_enable: true
+
+            # true: 挖掉裁切盒内点；false: 仅保留裁切盒内点，通常调试时才使用。
+            crop_body_negative: true
+
+            # 车身裁切盒范围，单位 m，坐标系为进入 FAST-LIO 前端的雷达点云坐标系。
+            crop_body_min_x: -0.4
+            crop_body_max_x: 0.4
+            crop_body_min_y: -0.3
+            crop_body_max_y: 0.3
+            crop_body_min_z: -0.1
+            crop_body_max_z: 0.6
+
+            # 点时间戳单位。当前配置适配 Livox 驱动输出。
+            timestamp_unit: 3
+
+            # LiDAR 名义帧率，单位 Hz。
+            scan_rate: 10
+
+        mapping:
+            # IMU 加速度噪声协方差。
+            acc_cov: 0.1
+
+            # IMU 角速度噪声协方差。
+            gyr_cov: 0.1
+
+            # IMU 加速度 bias 漂移协方差。
+            b_acc_cov: 0.0001
+
+            # IMU 角速度 bias 漂移协方差。
+            b_gyr_cov: 0.0001
+
+            # 地图视场角，单位度。
+            fov_degree: 360.0
+
+            # 有效探测范围，单位 m。
+            det_range: 100.0
+
+            # 是否在线估计 LiDAR-IMU 外参。
+            # 当前双雷达方案下通常建议关闭，使用离线标定好的固定外参。
+            extrinsic_est_en: false
+
+            # 原版 FAST-LIO 单雷达外参接口。
+            # 当前工程中这组参数仍然是“主外参”，语义为：
+            #   right_lidar -> IMU
+            # 它只描述右雷达点云坐标系到右雷达内置 IMU 坐标系的固定安装关系，
+            # 绝不能填写 base_footprint -> right_lidar 的物理安装倾角。
+            extrinsic_T: [ -0.011, -0.02329, 0.04412 ]
+            extrinsic_R: [ 1., 0., 0.,
+                            0., 1., 0.,
+                            0., 0., 1. ]
+
+        publish:
+            # 以下点云/路径发布逻辑仍保留原版接口，可按需开启/关闭。
+            path_en: true
+            effect_map_en: true
+            map_en: true
+            scan_publish_en: true
+            dense_publish_en: true
+            scan_bodyframe_pub_en: true
+
+        pcd_save:
+            # 是否允许通过服务保存地图 PCD。
+            pcd_save_en: true
+
+            # 每隔多少帧写出一个 PCD 文件。
+            # -1 表示所有帧累计到同一个 PCD，适合离线保存，不适合超长时间运行。
+            interval: -1

@@ -1,0 +1,19 @@
+# Navigation demonstration points, not official referee-zone coordinates.
+pb2025_sentry_behavior_server:
+  ros__parameters:
+    use_sim_time: true
+    team_color: red
+    outpost_attack_goal: '9.0;5.0;0.0'
+    resupply_goal: '3.4;9.5;0.0'
+    defend_base_goal: '5.0;9.5;0.0'
+    defend_fortress_goal: '9.0;9.5;0.0'
+    capture_point_a_goal: '7.0;5.0;0.0'
+    capture_point_b_goal: '9.0;7.0;0.0'
+    gather_info_goal: '5.0;7.0;0.0'
+    cover_home_reference_x: 3.4
+    cover_home_reference_y: 9.5
+    cover_rear_distance: 0.5
+    cover_side_offset: 0.0
+    capture_point_a_dwell_ms: 2000
+    capture_point_b_dwell_ms: 2000
+    gather_info_dwell_ms: 2000

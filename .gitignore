@@ -1,0 +1,53 @@
+# ROS 2 / colcon workspace outputs
+/build/
+/install/
+/log/
+**/build/
+**/install/
+**/log/
+**/logs/
+
+# Local run records and project notes
+/text/
+/docs/
+
+# Local editor, agent, and virtual-environment state
+/.vscode/
+/.agents/
+/.codex/
+/.sim_python/
+**/.vscode/
+**/.idea/
+
+# Python and test caches
+**/__pycache__/
+*.py[cod]
+*.pyo
+**/.cache/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+.coverage
+coverage.xml
+
+# Generated runtime data
+*.log
+*.bag
+*.bag.active
+*.db3
+*.sqlite
+*.sqlite3
+**/Log/*.txt
+**/Log/*.csv
+**/Log/*.png
+**/Log/*.pdf
+
+# Source-package documentation and dependency manifests remain available under
+# src/ because they are part of the cloneable workspace.
+
+# Temporary and operating-system files
+*~
+*.swp
+*.swo
+.DS_Store
+._*

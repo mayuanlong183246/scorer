@@ -1,0 +1,22 @@
+uint8 HOLD_SAFE=0
+uint8 COVER_TEAMMATE=1
+uint8 ATTACK_OUTPOST=2
+uint8 RESUPPLY_HOME=3
+uint8 DEFEND_HOME=4
+uint8 CAPTURE_POINT=5
+uint8 GATHER_INFO=6
+
+std_msgs/Header header
+uint8 action
+string action_name
+string target_id
+geometry_msgs/PoseStamped suggested_goal
+float32 score
+string[] top_reasons
+string[] rejected_actions
+bool emergency
+uint32 decision_id
+uint32 world_state_id
+float32 confidence
+builtin_interfaces/Duration valid_for
+bool preemptible

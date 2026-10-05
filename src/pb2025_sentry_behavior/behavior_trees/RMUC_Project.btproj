@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root BTCPP_format="4" project_name="Project">
+    <include path="rmul_nuc_2026.xml"/>
+    <!-- Description of Node Models (used by Groot) -->
+    <TreeNodesModel>
+        <Condition ID="IsBaseStatusOK" editable="true">
+            <input_port name="base_status" default="5000" type="int">Base HP threshold. Lower than this returns FAILURE</input_port>
+            <input_port name="fortress_status" default="2" type="int">Fortress occupation status that triggers FAILURE. Status 3 is also treated as danger</input_port>
+            <input_port name="key_port" default="{@referee_eventData}" type="pb_rm_interfaces::msg::EventData_&lt;std::allocator&lt;void&gt; &gt;">EventData port on blackboard</input_port>
+        </Condition>
+        <Condition ID="IsGameStatus">
+            <input_port name="max_remain_time" default="300" type="int">Maximum remaining time (s)</input_port>
+            <input_port name="min_remain_time" default="0" type="int">Minimum remaining time (s)</input_port>
+            <input_port name="expected_game_progress" default="4" type="int">Expected game progress stage</input_port>
+            <input_port name="key_port" default="{@referee_gameStatus}" type="pb_rm_interfaces::msg::GameStatus_&lt;std::allocator&lt;void&gt; &gt;">GameStatus port on blackboard</input_port>
+        </Condition>
+        <Condition ID="IsRfidDetected">
+            <input_port name="friendly_supply_zone_exchange" default="false" type="bool">己方与兑换区重叠的补给区</input_port>
+            <input_port name="friendly_supply_zone_non_exchange" default="false" type="bool">己方与兑换区不重叠的补给区 / RMUL 补给区</input_port>
+            <input_port name="center_gain_point" default="false" type="bool">中心增益点（仅 RMUL 适用）</input_port>
+            <input_port name="friendly_fortress_gain_point" default="false" type="bool">己方堡垒增益点</input_port>
+            <input_port name="key_port" default="{@referee_rfidStatus}" type="pb_rm_interfaces::msg::RfidStatus_&lt;std::allocator&lt;void&gt; &gt;">RfidStatus port on blackboard</input_port>
+        </Condition>
+        <Condition ID="IsStatusOK">
+            <input_port name="ammo_min" default="0" type="int">Lower then minimum ammo will return FAILURE</input_port>
+            <input_port name="heat_max" default="400" type="int">Maximum heat. NOTE: Sentry heat limit is 400</input_port>
+            <input_port name="hp_min" default="300" type="int">Minimum HP. NOTE: Sentry init/max HP is 400</input_port>
+            <input_port name="key_port" default="{@referee_robotStatus}" type="pb_rm_interfaces::msg::RobotStatus_&lt;std::allocator&lt;void&gt; &gt;">RobotStatus port on blackboard</input_port>
+        </Condition>
+        <Condition ID="IsStatusTime" editable="true">
+            <input_port name="StatusRemainTime" default="0" type="int"/>
+            <input_port name="GameStart" type="int"/>
+        </Condition>
+        <Condition ID="IsStatusTimeOK" editable="true">
+            <input_port name="game_status_port" default="{@referee_gameStatus}" type="pb_rm_interfaces::msg::GameStatus_&lt;std::allocator&lt;void&gt; &gt;">GameStatus port on blackboard</input_port>
+            <input_port name="status_port" default="{@sentry_status}" type="std_msgs::msg::Int32_&lt;std::allocator&lt;void&gt; &gt;">Sentry status port on blackboard</input_port>
+            <input_port name="timeout_sec" default="290" type="int">Maximum continuous dwell time in seconds</input_port>
+            <output_port name="current_status" type="int">Current status when timeout happens</output_port>
+            <output_port name="elapsed_sec" type="double">Elapsed seconds of the current status</output_port>
+        </Condition>
+        <Condition ID="IsMappingBootstrapFinished" editable="true">
+            <input_port name="enabled" default="true" type="bool">Whether bootstrap gating is enabled</input_port>
+            <input_port name="key_port" default="{@mapping_bootstrap_finished}" type="std_msgs::msg::Bool_&lt;std::allocator&lt;void&gt; &gt;">Mapping bootstrap finished flag</input_port>
+        </Condition>
+        <Action ID="PublishSpinSpeed">
+            <input_port name="spin_speed" default="5.000000" type="double">Angular Z velocity (rad/s)</input_port>
+            <input_port name="duration" type="std::chrono::milliseconds">Publish then sleep duration in milliseconds</input_port>
+            <input_port name="topic_name" default="__default__placeholder__" type="std::string">Topic name</input_port>
+        </Action>
+        <Action ID="PublishStatus" editable="true">
+            <input_port name="sentry_status" default="3" type="int">Sentry status published directly to topic</input_port>
+            <input_port name="topic_name" default="/sentry_status" type="std::string">Topic name</input_port>
+        </Action>
+        <Action ID="PublishTwist">
+            <input_port name="v_y" default="0.000000" type="double">Linear Y velocity (m/s)</input_port>
+            <input_port name="v_yaw" default="0.000000" type="double">Angular Z velocity (rad/s)</input_port>
+            <input_port name="v_x" default="0.000000" type="double">Linear X velocity (m/s)</input_port>
+            <input_port name="duration" type="std::chrono::milliseconds">Publish then sleep duration in milliseconds</input_port>
+            <input_port name="topic_name" default="__default__placeholder__" type="std::string">Topic name</input_port>
+        </Action>
+        <Action ID="SendNav2Goal" editable="true">
+            <input_port name="goal" default="1;2;0" type="geometry_msgs::msg::PoseStamped_&lt;std::allocator&lt;void&gt; &gt;">Expected goal pose that send to nav2. Fill with format `x;y;yaw`</input_port>
+            <input_port name="action_name" default="navigate_to_pose" type="std::string">Action server name</input_port>
+        </Action>
+        <Action ID="StatusConvert" editable="true">
+            <input_port name="original_status" type="int">Original status to restore after the temporary transition</input_port>
+            <input_port name="temporary_status" default="2" type="int">Temporary status used to break continuous dwell timing</input_port>
+            <input_port name="hold_ms" default="5000" type="int">How long to keep the temporary status in milliseconds</input_port>
+            <input_port name="topic_name" default="/sentry_status" type="std::string">Topic used to publish the converted status</input_port>
+        </Action>
+    </TreeNodesModel>
+</root>
