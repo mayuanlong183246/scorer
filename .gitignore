@@ -6,6 +6,7 @@
 **/install/
 **/log/
 **/logs/
+**/include/install/
 
 # Local run records and project notes
 /text/
