@@ -17,9 +17,3 @@ __pycache__
 *~
 
 .DS_Store
-
-*.pcd
-
-*.gv
-
-*.pdf

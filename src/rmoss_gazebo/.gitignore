@@ -2,5 +2,3 @@
 *.pyc
 # vscode file
 .vscode/
-#
-test.sh

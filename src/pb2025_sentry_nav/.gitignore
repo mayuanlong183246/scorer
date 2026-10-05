@@ -15,9 +15,3 @@ log/*
 __pycache__
 
 *~
-*.pcd
-*.gv
-*.pdf
-
-pb2025_nav_bringup/map/reality/*.yaml
-pb2025_nav_bringup/map/reality/*.pgm
