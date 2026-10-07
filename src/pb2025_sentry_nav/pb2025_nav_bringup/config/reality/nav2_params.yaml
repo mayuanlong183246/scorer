@@ -92,7 +92,10 @@ sensor_scan_generation:
     use_sim_time: False
     lidar_frame: "right_lidar"
     base_frame: "base_footprint"
-    robot_base_frame: "base_footprint"
+    # Navigation and fake_vel_transform use the yaw-stabilized gimbal frame.
+    # Publishing odometry with base_footprint here leaves gimbal_yaw absent from
+    # the TF chain and prevents the local costmap from transforming its window.
+    robot_base_frame: "gimbal_yaw"
     tf_future_offset_sec: 0.0
 
 terrain_analysis:

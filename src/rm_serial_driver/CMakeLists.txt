@@ -31,10 +31,27 @@ ament_auto_add_library(${PROJECT_NAME} SHARED
   src/crc.cpp
 )
 
+ament_auto_add_library(velocity_serial_sender SHARED
+  src/velocity_serial_sender.cpp
+  src/crc.cpp
+)
+
+ament_target_dependencies(velocity_serial_sender
+  example_interfaces
+  std_msgs
+  geometry_msgs
+  serial_driver
+)
+
 ament_target_dependencies(${PROJECT_NAME}
   example_interfaces
   pb_rm_interfaces
   std_msgs
+)
+
+rclcpp_components_register_node(velocity_serial_sender
+  PLUGIN rm_serial_driver::VelocitySerialSender
+  EXECUTABLE velocity_serial_sender_node
 )
 
 rclcpp_components_register_node(${PROJECT_NAME}

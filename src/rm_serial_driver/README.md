@@ -91,3 +91,24 @@ imu_sub_ = this->create_subscription<sensor_msgs::msg::Imu>(
     std::bind(&RMSerialDriver::sendData, this, std::placeholders::_1));
 ```
   
+
+
+## 独立真车速度发送器
+
+如果不启动完整 `rm_serial_driver`，可以只启动速度串口发送器。它订阅
+`/cmd_vel_base_real_yaw`，按现有底盘 `SendPacket` 协议发送 `vx/vy/vz/status`，
+并复用相同 CRC16。它不会自动生成运动指令。
+
+```bash
+ros2 launch rm_serial_driver velocity_serial_sender.launch.py \
+  device_name:=/dev/ttyACM0 baud_rate:=115200
+```
+
+上游速度链路保持为：
+
+```text
+/cmd_vel_base_real_yaw -> velocity_serial_sender -> 底盘 MCU
+```
+
+首次真车测试可先使用 `dry_run:=true`，确认话题和速度数据，再连接底盘。
+`velocity_serial_sender` 与 `rm_serial_driver` 不能同时运行，否则会有两个节点向同一串口发送控制帧。

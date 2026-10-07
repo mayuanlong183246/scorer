@@ -194,6 +194,7 @@ def generate_launch_description():
                 respawn_delay=2.0,
                 parameters=[configured_params],
                 arguments=["--ros-args", "--log-level", log_level],
+                remappings=[("cmd_vel", "cmd_vel_controller")],
             ),
             Node(
                 package="nav2_bt_navigator",
@@ -205,7 +206,7 @@ def generate_launch_description():
                 parameters=[configured_params],
                 arguments=["--ros-args", "--log-level", log_level],
                 remappings=[
-                    ("cmd_vel", "cmd_vel_nav2_result"),  # remap output
+                    ("cmd_vel", "cmd_vel_controller"),  # feed velocity_smoother
                 ],
             ),
             Node(
@@ -247,7 +248,10 @@ def generate_launch_description():
         ],
     )
 
+    # When composition is enabled, controller_server is loaded into nav2_container
+    # above. Do not start a second node with the same name and costmap instances.
     start_controller_server_cmd = Node(
+        condition=IfCondition(PythonExpression(["not ", use_composition])),
         package="nav2_controller",
         executable="controller_server",
         name="controller_server",
@@ -284,6 +288,13 @@ def generate_launch_description():
                 parameters=[configured_params],
             ),
             ComposableNode(
+                package="nav2_controller",
+                plugin="nav2_controller::ControllerServer",
+                name="controller_server",
+                parameters=[configured_params],
+                remappings=[("cmd_vel", "cmd_vel_controller")],
+            ),
+            ComposableNode(
                 package="nav2_smoother",
                 plugin="nav2_smoother::SmootherServer",
                 name="smoother_server",
@@ -301,7 +312,7 @@ def generate_launch_description():
                 name="behavior_server",
                 parameters=[configured_params],
                 remappings=[
-                    ("cmd_vel", "cmd_vel_nav2_result"),  # remap output
+                    ("cmd_vel", "cmd_vel_controller"),  # feed velocity_smoother
                 ],
             ),
             ComposableNode(
