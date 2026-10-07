@@ -1,6 +1,6 @@
 # Copyright 2026 RMUC contributors
 # Licensed under the Apache License, Version 2.0.
-"""Existing physical navigation with isolated fake referee and an opt-in output gate."""
+"""Physical navigation test using the standard referee topic interface."""
 import math
 import os
 from pathlib import Path
@@ -68,29 +68,22 @@ def setup(context):
                                      delete=False) as output:
         yaml.safe_dump(navigation, output)
         nav_file = output.name
-    topics = ['game_status', 'robot_status', 'event_data', 'rfid_status',
-              'all_robot_hp', 'ground_robot_position', 'simulation_state', 'buff']
-    remaps = [('/referee/' + topic, '/test_referee/' + topic) for topic in topics]
     nodes = []
     if arg('start_navigation').lower() == 'true':
         nodes.append(IncludeLaunchDescription(PythonLaunchDescriptionSource(os.path.join(
             share('pb2025_nav_bringup'), 'launch/rm_navigation_reality_launch.py')),
             launch_arguments={'map': arg('map'), 'params_file': nav_file,
                               'use_sim_time': 'false', 'use_rviz': arg('rviz')}.items()))
-    nodes.append(Node(package='pb2025_sentry_behavior', executable='sentry_referee_simulator.py',
-                      name='sentry_referee_simulator', output='screen', remappings=remaps,
-                      parameters=[{'use_sim_time': False, 'team_color': arg('team_color'),
-                                   'scenario': 'hold_safe', 'publish_target': False}]))
     for executable, name in [('tactical_scorer_node', 'tactical_scorer_node'),
                              ('pb2025_sentry_behavior_server', 'pb2025_sentry_behavior_server'),
                              ('pb2025_sentry_behavior_client', 'pb2025_sentry_behavior_client')]:
         params = behavior.get(name, {}).get('ros__parameters', {})
         nodes.append(Node(package='pb2025_sentry_behavior', executable=executable,
                           name=name, output='screen', parameters=[params],
-                          remappings=remaps + [('/cmd_vel', '/safety_stop')]))
+                          remappings=[('/cmd_vel', '/safety_stop')]))
     nodes.extend([
         Node(package='pb2025_sentry_behavior', executable='sentry_tactical_visualizer.py',
-             output='screen', remappings=remaps,
+             output='screen',
              parameters=[{'use_sim_time': False, 'team_color': arg('team_color'),
                           'log_file': arg('log_file')}]),
         Node(package='pb2025_sentry_behavior', executable='sentry_test_velocity_gate.py',

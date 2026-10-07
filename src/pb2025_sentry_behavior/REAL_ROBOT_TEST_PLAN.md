@@ -5,11 +5,17 @@
 ```bash
 source /opt/ros/humble/setup.bash
 source install/setup.bash
+# 使用真实裁判数据
+ros2 launch pb2025_sentry_behavior sentry_tactical_real_test.launch.py \
+  map:=/path/to/RMUC26.yaml gate_enabled:=false rviz:=true
+
+# 使用独立裁判模拟器（与真实裁判二选一）
+ros2 launch pb2025_sentry_behavior sentry_referee_simulator.launch.py scenario:=match
 ros2 launch pb2025_sentry_behavior sentry_tactical_real_test.launch.py \
   map:=/path/to/RMUC26.yaml gate_enabled:=false rviz:=true
 ```
 
-该入口使用 `use_sim_time=false`、现有 `rm_navigation_reality_launch.py`、地图与 Nav2 参数。裁判模拟器发布到 `/test_referee/*`；真实视觉保留 `/tracker/target`，模拟器用 `publish_target:=false`。串口裁判输出不参与本轮决策。先用 `gate_enabled:=false` 静态检查话题和目标，再由现场安全员确认后改为 `true`。
+该入口使用 `use_sim_time=false`、现有 `rm_navigation_reality_launch.py`、地图与 Nav2 参数。评分器统一订阅标准 `/referee/*` 话题；模拟器必须单独启动，并与真实裁判二选一，不能同时发布。模拟器默认 `scenario:=match`，会自动经历准备、倒计时并进入 `RUNNING`；需要验证安全门时使用 `scenario:=hold_safe`。真实视觉保留 `/tracker/target`。先用 `gate_enabled:=false` 静态检查话题和目标，再由现场安全员确认后改为 `true`。
 
 速度门控输出位于坐标转换之后、串口输入之前，平移合速度不超过 0.3 m/s，角速度不超过 0.5 rad/s；停止、HOLD、决策/里程计/速度过期及导航取消都会输出零速。`cmd_spin` 被重映射到禁止话题，首轮不启用小陀螺。
 
@@ -54,8 +60,8 @@ ros2 param set /sentry_referee_simulator scenario game_over
 
 ```bash
 ros2 bag record -o sentry_real_test \
-  /test_referee/game_status /test_referee/robot_status /test_referee/event_data \
-  /test_referee/all_robot_hp /test_referee/ground_robot_position /test_referee/rfid_status \
+  /referee/game_status /referee/robot_status /referee/event_data \
+  /referee/all_robot_hp /referee/ground_robot_position /referee/rfid_status \
   /tracker/target /tactical_decision /tactical_execution \
   /tactical_navigation_status /test_velocity_gate/status /odometry /cmd_vel_base_real_yaw
 ```

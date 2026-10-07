@@ -133,12 +133,35 @@ class SentryRefereeSimulator(Node):
 
         period = 1.0 / max(self.publish_rate, 0.1)
         self.timer = self.create_timer(period, self.on_timer)
+        self.publisher_check_timer = self.create_timer(2.0, self.check_referee_publishers)
+        self.publisher_check_done = False
         self.get_logger().info(
             f"Started sentry referee simulator: scenario={self.scenario} "
             f"period={self.scenario_period_sec:.1f}s rate={self.publish_rate:.1f}Hz "
             f"team={self.team_color} duration={self.match_duration_sec:.1f}s "
             f"speed={self.speed:.2f} seed={self.random_seed}"
         )
+
+    def check_referee_publishers(self) -> None:
+        """Warn when another node publishes the same standard referee topics."""
+        topics = (
+            "game_status", "robot_status", "event_data", "rfid_status",
+            "all_robot_hp", "ground_robot_position",
+        )
+        conflicts = []
+        for topic in topics:
+            count = len(self.get_publishers_info_by_topic("/referee/" + topic))
+            if count > 1:
+                conflicts.append(f"/referee/{topic} ({count} publishers)")
+        if conflicts:
+            self.get_logger().warning(
+                "Multiple referee publishers detected; stop either the real referee "
+                "or this simulator: " + ", ".join(conflicts))
+            self.publisher_check_done = True
+        elif not self.publisher_check_done:
+            self.get_logger().info(
+                "Publishing standard /referee topics; no competing referee publisher detected")
+            self.publisher_check_done = True
 
     def on_timer(self) -> None:
         # Allow ros2 param set to switch navigation test scenarios at runtime.
