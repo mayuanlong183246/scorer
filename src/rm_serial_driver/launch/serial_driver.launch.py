@@ -19,6 +19,7 @@ def generate_launch_description():
     parity = LaunchConfiguration('parity')
     stop_bits = LaunchConfiguration('stop_bits')
     dry_run = LaunchConfiguration('dry_run')
+    publish_referee_topics = LaunchConfiguration('publish_referee_topics')
     input_topic = LaunchConfiguration('input_topic')
     status_topic = LaunchConfiguration('status_topic')
 
@@ -37,6 +38,8 @@ def generate_launch_description():
                 'parity': ParameterValue(parity, value_type=str),
                 'stop_bits': ParameterValue(stop_bits, value_type=str),
                 'dry_run': ParameterValue(dry_run, value_type=bool),
+                'publish_referee_topics': ParameterValue(
+                    publish_referee_topics, value_type=bool),
                 'input_topic': ParameterValue(input_topic, value_type=str),
                 'status_topic': ParameterValue(status_topic, value_type=str),
             },
@@ -51,6 +54,9 @@ def generate_launch_description():
         DeclareLaunchArgument('parity', default_value='none'),
         DeclareLaunchArgument('stop_bits', default_value='1'),
         DeclareLaunchArgument('dry_run', default_value='false'),
+        DeclareLaunchArgument(
+            'publish_referee_topics', default_value='true',
+            description='Publish MCU referee RX data on /referee/*; set false with simulator'),
         DeclareLaunchArgument('input_topic', default_value='/cmd_vel_base_real_yaw'),
         DeclareLaunchArgument('status_topic', default_value='/sentry_status'),
         rm_serial_driver_node,

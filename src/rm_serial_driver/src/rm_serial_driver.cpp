@@ -29,15 +29,22 @@ RMSerialDriver::RMSerialDriver(const rclcpp::NodeOptions & options)
 
   getParams();
 
-  // 裁判数据发布方
-  referee_event_data_pub_ =
-    this->create_publisher<pb_rm_interfaces::msg::EventData>("referee/event_data", 10);
-  referee_game_status_pub_ =
-    this->create_publisher<pb_rm_interfaces::msg::GameStatus>("referee/game_status", 10);
-  referee_robot_status_pub_ =
-    this->create_publisher<pb_rm_interfaces::msg::RobotStatus>("referee/robot_status", 10);
-  referee_rfid_status_pub_ =
-    this->create_publisher<pb_rm_interfaces::msg::RfidStatus>("referee/rfid_status", 10);
+  // Referee topics must have exactly one source. Simulation can keep serial TX enabled while
+  // suppressing referee RX publication to avoid mixing MCU and simulator world states.
+  if (publish_referee_topics_) {
+    referee_event_data_pub_ =
+      this->create_publisher<pb_rm_interfaces::msg::EventData>("referee/event_data", 10);
+    referee_game_status_pub_ =
+      this->create_publisher<pb_rm_interfaces::msg::GameStatus>("referee/game_status", 10);
+    referee_robot_status_pub_ =
+      this->create_publisher<pb_rm_interfaces::msg::RobotStatus>("referee/robot_status", 10);
+    referee_rfid_status_pub_ =
+      this->create_publisher<pb_rm_interfaces::msg::RfidStatus>("referee/rfid_status", 10);
+  } else {
+    RCLCPP_WARN(
+      get_logger(),
+      "Referee topic publication disabled; serial velocity TX remains enabled for simulation");
+  }
   received_mode_pub_ = this->create_publisher<std_msgs::msg::Int32>("/rm_serial_driver/received_robot_mode", 10);
 
   if (dry_run_) {
@@ -117,7 +124,7 @@ void RMSerialDriver::receiveData()
 
       bool crc_ok =
         crc16::Verify_CRC16_Check_Sum(reinterpret_cast<const uint8_t *>(&packet), sizeof(packet));
-      if (crc_ok) {
+      if (crc_ok && publish_referee_topics_) {
           pb_rm_interfaces::msg::GameStatus referee_game_status_msg;
           referee_game_status_msg.game_progress = packet.game_process;
           referee_game_status_msg.stage_remain_time = packet.remain_time;
@@ -153,7 +160,7 @@ void RMSerialDriver::receiveData()
           //   "Robot ID: %d, Current HP: %d, Remaining Time: %d, Game Process: %d, Projectile Allowance: %d",
           //   packet.robot_id, packet.current_hp, packet.remain_time,
           //   packet.game_process, packet.projectile_allowance);
-        } else {
+        } else if (!crc_ok) {
           RCLCPP_ERROR(get_logger(), "CRC error!");
         }
       } else {
@@ -306,6 +313,7 @@ void RMSerialDriver::getParams()
 
   input_topic_ = declare_parameter<std::string>("input_topic", "/cmd_vel_base_real_yaw");
   status_topic_ = declare_parameter<std::string>("status_topic", "/sentry_status");
+  publish_referee_topics_ = declare_parameter<bool>("publish_referee_topics", true);
   if (input_topic_.empty() || status_topic_.empty()) {
     throw std::invalid_argument("input_topic and status_topic must not be empty");
   }

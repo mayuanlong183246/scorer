@@ -48,6 +48,10 @@ rclcpp_components_register_node(${PROJECT_NAME}
 
 
 if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_send_packet test/test_send_packet.cpp src/crc.cpp)
+  target_include_directories(test_send_packet PRIVATE include)
+
   find_package(ament_lint_auto REQUIRED)
   list(APPEND AMENT_LINT_AUTO_EXCLUDE
     ament_cmake_copyright

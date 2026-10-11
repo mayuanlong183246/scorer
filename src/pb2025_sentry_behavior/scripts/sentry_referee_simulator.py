@@ -135,6 +135,7 @@ class SentryRefereeSimulator(Node):
         self.timer = self.create_timer(period, self.on_timer)
         self.publisher_check_timer = self.create_timer(2.0, self.check_referee_publishers)
         self.publisher_check_done = False
+        self.publisher_conflict_failed = False
         self.get_logger().info(
             f"Started sentry referee simulator: scenario={self.scenario} "
             f"period={self.scenario_period_sec:.1f}s rate={self.publish_rate:.1f}Hz "
@@ -143,7 +144,7 @@ class SentryRefereeSimulator(Node):
         )
 
     def check_referee_publishers(self) -> None:
-        """Warn when another node publishes the same standard referee topics."""
+        """Fail fast when another node publishes the same standard referee topics."""
         topics = (
             "game_status", "robot_status", "event_data", "rfid_status",
             "all_robot_hp", "ground_robot_position",
@@ -154,10 +155,16 @@ class SentryRefereeSimulator(Node):
             if count > 1:
                 conflicts.append(f"/referee/{topic} ({count} publishers)")
         if conflicts:
-            self.get_logger().warning(
-                "Multiple referee publishers detected; stop either the real referee "
-                "or this simulator: " + ", ".join(conflicts))
+            if self.publisher_conflict_failed:
+                return
+            self.publisher_conflict_failed = True
+            self.get_logger().fatal(
+                "Multiple referee publishers detected; stop the real referee source or set "
+                "rm_serial_driver publish_referee_topics:=false: " + ", ".join(conflicts))
+            self.timer.cancel()
+            self.publisher_check_timer.cancel()
             self.publisher_check_done = True
+            raise RuntimeError("conflicting /referee publishers")
         elif not self.publisher_check_done:
             self.get_logger().info(
                 "Publishing standard /referee topics; no competing referee publisher detected")

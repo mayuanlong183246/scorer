@@ -61,6 +61,8 @@ struct SendPacket
   uint16_t checksum = 0;
 } __attribute__((packed));
 
+static_assert(sizeof(SendPacket) == 16, "SendPacket wire format must remain 16 bytes");
+
 inline ReceivePacket fromVector(const std::vector<uint8_t> & data)
 {
   ReceivePacket packet;

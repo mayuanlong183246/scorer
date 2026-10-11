@@ -98,3 +98,10 @@ imu_sub_ = this->create_subscription<sensor_msgs::msg::Imu>(
 
 速度输入和状态输入可通过 `input_topic` 和 `status_topic` 参数修改，默认分别为
 `/cmd_vel_base_real_yaw` 和 `/sentry_status`。可使用 `dry_run:=true` 在不打开串口的情况下检查订阅和打包日志。
+
+使用裁判模拟器但仍需验证真实串口速度发送时，必须关闭 MCU 裁判数据发布，避免两套
+`/referee/*` 数据互相覆盖：
+
+```bash
+ros2 launch rm_serial_driver serial_driver.launch.py publish_referee_topics:=false
+```

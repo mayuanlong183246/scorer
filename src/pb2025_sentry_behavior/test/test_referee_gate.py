@@ -12,6 +12,7 @@ import unittest
 import rclpy
 from rclpy.parameter import Parameter
 from geometry_msgs.msg import Twist
+from pb_rm_interfaces.msg import EventData
 from pb2025_sentry_decision_interfaces.msg import TacticalDecision
 
 scripts = Path(__file__).resolve().parents[1] / 'scripts'
@@ -82,6 +83,22 @@ class RefereeTest(unittest.TestCase):
         self.assertTrue(self.set_parameters(scenario='gather_info').successful)
         self.node.on_timer()
         self.assertEqual(self.node.scenario, 'gather_info')
+
+    def test_duplicate_referee_publisher_fails_fast(self):
+        other = rclpy.create_node('duplicate_referee_source')
+        publisher = other.create_publisher(EventData, '/referee/event_data', 10)
+        try:
+            deadline = time.monotonic() + 2.0
+            while (self.node.count_publishers('/referee/event_data') < 2 and
+                   time.monotonic() < deadline):
+                rclpy.spin_once(self.node, timeout_sec=0.05)
+            self.assertGreaterEqual(self.node.count_publishers('/referee/event_data'), 2)
+            with self.assertRaisesRegex(RuntimeError, 'conflicting /referee publishers'):
+                self.node.check_referee_publishers()
+            self.assertTrue(self.node.timer.is_canceled())
+        finally:
+            other.destroy_publisher(publisher)
+            other.destroy_node()
 
 
 class GateTest(unittest.TestCase):

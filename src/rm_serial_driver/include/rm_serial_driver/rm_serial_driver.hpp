@@ -59,6 +59,7 @@ private:
   std::string input_topic_;
   std::string status_topic_;
   bool dry_run_ {false};
+  bool publish_referee_topics_ {true};
   std::unique_ptr<drivers::serial_driver::SerialPortConfig> device_config_;
   std::unique_ptr<drivers::serial_driver::SerialDriver> serial_driver_;
 

@@ -6,5 +6,6 @@
     parity: none
     stop_bits: "1"
     dry_run: false
+    publish_referee_topics: true
     input_topic: /cmd_vel_base_real_yaw
     status_topic: /sentry_status
