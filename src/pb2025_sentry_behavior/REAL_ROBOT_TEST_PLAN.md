@@ -7,17 +7,17 @@ source /opt/ros/humble/setup.bash
 source install/setup.bash
 # 使用真实裁判数据
 ros2 launch pb2025_sentry_behavior sentry_tactical_real_test.launch.py \
-  map:=/path/to/RMUC26.yaml gate_enabled:=false rviz:=true
+  map:=/path/to/RMUC26.yaml rviz:=true
 
 # 使用独立裁判模拟器（与真实裁判二选一）
 ros2 launch pb2025_sentry_behavior sentry_referee_simulator.launch.py scenario:=match
 ros2 launch pb2025_sentry_behavior sentry_tactical_real_test.launch.py \
-  map:=/path/to/RMUC26.yaml gate_enabled:=false rviz:=true
+  map:=/path/to/RMUC26.yaml rviz:=true
 ```
 
 该入口使用 `use_sim_time=false`、现有 `rm_navigation_reality_launch.py`、地图与 Nav2 参数。评分器统一订阅标准 `/referee/*` 话题；模拟器必须单独启动，并与真实裁判二选一，不能同时发布。模拟器默认 `scenario:=match`，会自动经历准备、倒计时并进入 `RUNNING`；需要验证安全门时使用 `scenario:=hold_safe`。真实视觉保留 `/tracker/target`。先用 `gate_enabled:=false` 静态检查话题和目标，再由现场安全员确认后改为 `true`。
 
-速度门控输出位于坐标转换之后、串口输入之前，平移合速度不超过 0.3 m/s，角速度不超过 0.5 rad/s；停止、HOLD、决策/里程计/速度过期及导航取消都会输出零速。`cmd_spin` 被重映射到禁止话题，首轮不启用小陀螺。
+正式速度链路为 Nav2 → velocity_smoother → fake_vel_transform → `/cmd_vel_base_real_yaw` → `rm_serial_driver`。fake_vel_transform 不依赖 local_plan，以固定频率发布；命令超过 300 ms 或 odometry 超过 500 ms 未更新时持续发布零速。测试 gate 仅在独立回归测试中使用，不在此正式入口启动。
 
 启动后应确认每个裁判话题只有模拟器发布者、`/tracker/target` 只有视觉发布者，并确认 `/map`、`map→odom`、`odom→gimbal_yaw`、定位和 Nav2 lifecycle 均正常。启动前入口会检查所有战术目标在地图范围内且处于空闲栅格；掩护目标在行为树执行前仍由地图验证节点复核。
 
@@ -63,7 +63,7 @@ ros2 bag record -o sentry_real_test \
   /referee/game_status /referee/robot_status /referee/event_data \
   /referee/all_robot_hp /referee/ground_robot_position /referee/rfid_status \
   /tracker/target /tactical_decision /tactical_execution \
-  /tactical_navigation_status /test_velocity_gate/status /odometry /cmd_vel_base_real_yaw
+  /tactical_navigation_status /odometry /cmd_vel_base_real_yaw
 ```
 
 每项记录：日期、地图/参数版本、起止时间、场景、期望动作、实际动作、目标点、起止位姿、Nav2 结果、取消耗时、软件零速延迟、实际停车距离、异常日志和 rosbag 路径。自动回归结果与现场实测结果分开保存。

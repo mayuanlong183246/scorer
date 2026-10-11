@@ -41,8 +41,6 @@ public:
 private:
   void getParams();
 
-  double quaternionToRadians(const geometry_msgs::msg::Quaternion &quaternion);
-
   void sendTwistData(const geometry_msgs::msg::Twist::SharedPtr msg);
 
   void sendStatusData(const std_msgs::msg::Int32::SharedPtr msg);
@@ -58,6 +56,8 @@ private:
   // Serial port
   std::unique_ptr<IoContext> owned_ctx_;
   std::string device_name_;
+  std::string input_topic_;
+  std::string status_topic_;
   bool dry_run_ {false};
   std::unique_ptr<drivers::serial_driver::SerialPortConfig> device_config_;
   std::unique_ptr<drivers::serial_driver::SerialDriver> serial_driver_;
@@ -72,7 +72,8 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr twist_sub_;
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr status_sub_;
 
-  std::mutex send_mutex_;
+  std::mutex state_mutex_;
+  std::mutex serial_mutex_;
   float latest_vx_ {0.0F};
   float latest_vy_ {0.0F};
   float latest_vz_ {0.0F};

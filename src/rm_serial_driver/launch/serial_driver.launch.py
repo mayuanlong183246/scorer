@@ -18,6 +18,9 @@ def generate_launch_description():
     flow_control = LaunchConfiguration('flow_control')
     parity = LaunchConfiguration('parity')
     stop_bits = LaunchConfiguration('stop_bits')
+    dry_run = LaunchConfiguration('dry_run')
+    input_topic = LaunchConfiguration('input_topic')
+    status_topic = LaunchConfiguration('status_topic')
 
     rm_serial_driver_node = Node(
         package='rm_serial_driver',
@@ -33,6 +36,9 @@ def generate_launch_description():
                 'flow_control': ParameterValue(flow_control, value_type=str),
                 'parity': ParameterValue(parity, value_type=str),
                 'stop_bits': ParameterValue(stop_bits, value_type=str),
+                'dry_run': ParameterValue(dry_run, value_type=bool),
+                'input_topic': ParameterValue(input_topic, value_type=str),
+                'status_topic': ParameterValue(status_topic, value_type=str),
             },
         ],
     )
@@ -44,7 +50,8 @@ def generate_launch_description():
         DeclareLaunchArgument('flow_control', default_value='none'),
         DeclareLaunchArgument('parity', default_value='none'),
         DeclareLaunchArgument('stop_bits', default_value='1'),
+        DeclareLaunchArgument('dry_run', default_value='false'),
+        DeclareLaunchArgument('input_topic', default_value='/cmd_vel_base_real_yaw'),
+        DeclareLaunchArgument('status_topic', default_value='/sentry_status'),
         rm_serial_driver_node,
     ])
-
-#5-6 14-20 27-36 39-47

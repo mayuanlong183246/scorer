@@ -1,10 +1,8 @@
 #include "rm_serial_driver/rm_serial_driver.hpp"
 
-#include <tf2/LinearMath/Quaternion.h>
-
 #include <algorithm>
-#include <cstdint>
 #include <cmath>
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <memory>
@@ -13,8 +11,8 @@
 #include <rclcpp/utilities.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <serial_driver/serial_driver.hpp>
+#include <stdexcept>
 #include <string>
-#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <vector>
 
 #include "rm_serial_driver/crc.hpp"
@@ -67,11 +65,14 @@ RMSerialDriver::RMSerialDriver(const rclcpp::NodeOptions & options)
   //创建订阅方
   //并发送速度消息到下位机
   twist_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
-    "/cmd_vel_base_real_yaw", rclcpp::SensorDataQoS(),
+    input_topic_, rclcpp::QoS(rclcpp::KeepLast(1)).reliable(),
     std::bind(&RMSerialDriver::sendTwistData, this, std::placeholders::_1));
   status_sub_ = this->create_subscription<std_msgs::msg::Int32>(
-    "/sentry_status", rclcpp::SensorDataQoS(),
+    status_topic_, rclcpp::QoS(rclcpp::KeepLast(1)).reliable(),
     std::bind(&RMSerialDriver::sendStatusData, this, std::placeholders::_1));
+  RCLCPP_INFO(
+    get_logger(), "Control input: velocity=%s status=%s", input_topic_.c_str(),
+    status_topic_.c_str());
 }
 
 RMSerialDriver::~RMSerialDriver()
@@ -87,16 +88,6 @@ RMSerialDriver::~RMSerialDriver()
   if (owned_ctx_) {
     owned_ctx_->waitForExit();
   }
-}
-
-double RMSerialDriver::quaternionToRadians(const geometry_msgs::msg::Quaternion & quaternion)
-{
-  // 计算角度的弧度表示
-  double roll, pitch, yaw;
-  tf2::Quaternion tf_quaternion(quaternion.x, quaternion.y, quaternion.z, quaternion.w);
-  tf2::Matrix3x3(tf_quaternion).getRPY(roll, pitch, yaw);
-
-  return yaw;  // 这里返回yaw角度，你可以根据需要选择其他角度
 }
 
 void RMSerialDriver::receiveData()
@@ -178,9 +169,17 @@ void RMSerialDriver::receiveData()
 
 void RMSerialDriver::sendTwistData(const geometry_msgs::msg::Twist::SharedPtr msg)
 {
+  if (!std::isfinite(msg->linear.x) || !std::isfinite(msg->linear.y) ||
+    !std::isfinite(msg->angular.z))
+  {
+    RCLCPP_ERROR_THROTTLE(
+      get_logger(), *get_clock(), 2000, "Ignoring non-finite velocity command");
+    return;
+  }
+
   try {
     {
-      std::lock_guard<std::mutex> lock(send_mutex_);
+      std::lock_guard<std::mutex> lock(state_mutex_);
       latest_vx_ = static_cast<float>(msg->linear.x);
       latest_vy_ = static_cast<float>(msg->linear.y);
       latest_vz_ = static_cast<float>(msg->angular.z);
@@ -201,12 +200,12 @@ void RMSerialDriver::sendStatusData(const std_msgs::msg::Int32::SharedPtr status
     if (status_msg->data != clamped_status) {
       RCLCPP_WARN_THROTTLE(
         get_logger(), *get_clock(), 2000,
-        "Received /sentry_status=%d out of [0,255], clamped to %d",
+        "Received %s=%d out of [0,255], clamped to %d", status_topic_.c_str(),
         status_msg->data, clamped_status);
     }
 
     {
-      std::lock_guard<std::mutex> lock(send_mutex_);
+      std::lock_guard<std::mutex> lock(state_mutex_);
       latest_status_ = static_cast<uint8_t>(clamped_status);
     }
 
@@ -225,7 +224,7 @@ void RMSerialDriver::sendCombinedData()
 {
   SendPacket packet;
   {
-    std::lock_guard<std::mutex> lock(send_mutex_);
+    std::lock_guard<std::mutex> lock(state_mutex_);
     packet.vx = latest_vx_;
     packet.vy = latest_vy_;
     packet.vz = latest_vz_;
@@ -244,14 +243,14 @@ void RMSerialDriver::sendCombinedData()
     return;
   }
 
+  crc16::Append_CRC16_Check_Sum(reinterpret_cast<uint8_t *>(&packet), sizeof(packet));
+  std::vector<uint8_t> data = toVector(packet);
+  std::lock_guard<std::mutex> serial_lock(serial_mutex_);
   if (!serial_driver_->port()->is_open()) {
     RCLCPP_WARN_THROTTLE(
       get_logger(), *get_clock(), 2000, "Serial port not open, skip sending control data.");
     return;
   }
-
-  crc16::Append_CRC16_Check_Sum(reinterpret_cast<uint8_t *>(&packet), sizeof(packet));
-  std::vector<uint8_t> data = toVector(packet);
   serial_driver_->port()->send(data);
 }
 
@@ -273,13 +272,13 @@ void RMSerialDriver::sendTestData()
       return;
     }
 
+    crc16::Append_CRC16_Check_Sum(reinterpret_cast<uint8_t *>(&packet), sizeof(packet));
+    std::vector<uint8_t> data = toVector(packet);
+    std::lock_guard<std::mutex> serial_lock(serial_mutex_);
     if (!serial_driver_->port()->is_open()) {
       RCLCPP_WARN(get_logger(), "Serial port not open, skip sending test data.");
       return;
     }
-
-    crc16::Append_CRC16_Check_Sum(reinterpret_cast<uint8_t *>(&packet), sizeof(packet));
-    std::vector<uint8_t> data = toVector(packet);
     serial_driver_->port()->send(data);
   } catch (const std::exception & ex) {
     RCLCPP_ERROR(get_logger(), "Error while sending test data: %s", ex.what());
@@ -303,6 +302,12 @@ void RMSerialDriver::getParams()
   } catch (rclcpp::ParameterTypeException & ex) {
     RCLCPP_ERROR(get_logger(), "The dry_run provided was invalid");
     throw ex;
+  }
+
+  input_topic_ = declare_parameter<std::string>("input_topic", "/cmd_vel_base_real_yaw");
+  status_topic_ = declare_parameter<std::string>("status_topic", "/sentry_status");
+  if (input_topic_.empty() || status_topic_.empty()) {
+    throw std::invalid_argument("input_topic and status_topic must not be empty");
   }
 
   try {
@@ -379,6 +384,7 @@ void RMSerialDriver::reopenPort()
 {
   RCLCPP_WARN(get_logger(), "Attempting to reopen port");
   try {
+    std::lock_guard<std::mutex> serial_lock(serial_mutex_);
     if (serial_driver_->port()->is_open()) {
       serial_driver_->port()->close();
     }

@@ -37,13 +37,26 @@ rclcpp_components_register_node(${PROJECT_NAME}
 #############
 
 if(BUILD_TESTING)
-set(ament_cmake_clang_format_CONFIG_FILE "${CMAKE_SOURCE_DIR}/.clang-format")
-find_package(ament_lint_auto REQUIRED)
+  set(ament_cmake_clang_format_CONFIG_FILE "${CMAKE_SOURCE_DIR}/.clang-format")
+  find_package(ament_cmake_gtest REQUIRED)
+  find_package(ament_lint_auto REQUIRED)
   list(APPEND AMENT_LINT_AUTO_EXCLUDE
     ament_cmake_uncrustify
     ament_cmake_flake8
   )
   ament_lint_auto_find_test_dependencies()
+
+  ament_add_gtest(test_velocity_transform test/test_velocity_transform.cpp)
+  set_tests_properties(test_velocity_transform PROPERTIES
+    ENVIRONMENT "ROS_LOG_DIR=${CMAKE_CURRENT_BINARY_DIR}"
+  )
+  target_link_libraries(test_velocity_transform ${PROJECT_NAME})
+  ament_target_dependencies(test_velocity_transform
+    example_interfaces
+    geometry_msgs
+    nav_msgs
+    rclcpp
+  )
 endif()
 
 #############

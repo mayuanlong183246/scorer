@@ -56,8 +56,9 @@ def setup(context):
         if isinstance(block, dict) and 'ros__parameters' in block:
             block['ros__parameters']['use_sim_time'] = False
     transform = navigation['fake_vel_transform']['ros__parameters']
-    transform.update(output_cmd_vel_topic='/test_velocity/converted',
-                     cmd_spin_topic='/test_disabled_spin', init_spin_speed=0.0)
+    transform.update(output_cmd_vel_topic='/cmd_vel_base_real_yaw',
+                     cmd_spin_topic='/test_disabled_spin', init_spin_speed=0.0,
+                     command_timeout_ms=300.0, odom_timeout_ms=500.0, publish_rate=20.0)
     smoother = navigation['velocity_smoother']['ros__parameters']
     smoother.update(max_velocity=[0.3, 0.3, 0.5], min_velocity=[-0.3, -0.3, -0.5])
     controller = navigation['controller_server']['ros__parameters']['FollowPath']
@@ -80,14 +81,12 @@ def setup(context):
         params = behavior.get(name, {}).get('ros__parameters', {})
         nodes.append(Node(package='pb2025_sentry_behavior', executable=executable,
                           name=name, output='screen', parameters=[params],
-                          remappings=[('/cmd_vel', '/safety_stop')]))
+                          remappings=[('/cmd_vel', '/cmd_vel_controller')]))
     nodes.extend([
         Node(package='pb2025_sentry_behavior', executable='sentry_tactical_visualizer.py',
              output='screen',
              parameters=[{'use_sim_time': False, 'team_color': arg('team_color'),
                           'log_file': arg('log_file')}]),
-        Node(package='pb2025_sentry_behavior', executable='sentry_test_velocity_gate.py',
-             output='screen', parameters=[{'enabled': LaunchConfiguration('gate_enabled'), 'output_topic': '/cmd_vel_base_real_yaw'}]),
     ])
     return nodes
 
@@ -98,7 +97,7 @@ def generate_launch_description():
     defaults = {'map': os.path.join(nav, 'map/RMUC26.yaml'),
                 'nav_params_file': os.path.join(nav, 'config/reality/nav2_params.yaml'),
                 'params_file': os.path.join(behavior, 'params/sentry_behavior.yaml'),
-                'start_navigation': 'true', 'rviz': 'true', 'team_color': 'blue', 'gate_enabled': 'false',
-                'log_file': 'auto', 'gate_enabled': 'false'}
+                'start_navigation': 'true', 'rviz': 'true', 'team_color': 'blue',
+                'log_file': 'auto'}
     return LaunchDescription([DeclareLaunchArgument(k, default_value=v)
                               for k, v in defaults.items()] + [OpaqueFunction(function=setup)])
