@@ -28,6 +28,7 @@
 #include "pb_rm_interfaces/msg/ground_robot_position.hpp"
 #include "pb_rm_interfaces/msg/event_data.hpp"
 #include "geometry_msgs/msg/twist.hpp"
+#include "nav_msgs/msg/occupancy_grid.hpp"
 #include "std_msgs/msg/bool.hpp"
 
 using namespace std::chrono_literals;
@@ -58,6 +59,7 @@ protected:
          "capture_point_b_dwell_ms", "gather_info_dwell_ms"}) { set(key, 120); }
     set("outpost_attack_timeout_ms", 250);
     set("resupply_timeout_ms", 250);
+    set("navigation_action_name", std::string("navigate_to_pose"));
     set("navigation_timeout_ms", 1000);
     set("navigation_cancel_timeout_ms", 60);
     set("action_failure_cooldown_ms", 200);
@@ -191,13 +193,13 @@ TEST_F(TacticalTest, GatesDoNotInterfereWithMapping)
   ASSERT_TRUE(until([&] { return handles.size() == 1; }));
   pb_rm_interfaces::msg::GameStatus game; game.game_progress = 5; set("referee_gameStatus", game);
   ASSERT_TRUE(until([&] { return has(6, "PREEMPTED"); }));
-  EXPECT_GT(stops, 0); EXPECT_EQ(requested.size(), 1U);
+  EXPECT_EQ(stops, 0); EXPECT_EQ(requested.size(), 1U);
 }
 
 TEST_F(TacticalTest, NotStartedDoesNotNavigate)
 {
   pb_rm_interfaces::msg::GameStatus game; game.game_progress = 1; set("referee_gameStatus", game);
-  run(60); EXPECT_TRUE(requested.empty()); EXPECT_GT(stops, 0);
+  run(60); EXPECT_TRUE(requested.empty()); EXPECT_EQ(stops, 0);
 }
 
 TEST_F(TacticalTest, CaptureCanBePreemptedByLatestOrdinaryDecision)
@@ -292,9 +294,9 @@ TEST_F(TacticalTest, PriorityAndRestartFromFirstCapturePoint)
   choose(5); arrive(); ASSERT_TRUE(until([&] { return handles.size() == 2; }));
   choose(4); ASSERT_TRUE(until([&] { return handles.size() == 3; }));
   choose(3); ASSERT_TRUE(until([&] { return handles.size() == 4; }));
-  choose(4); ASSERT_TRUE(until([&] { return handles.size() == 5; }));
+  choose(4); run(50); EXPECT_EQ(handles.size(), 4U);
   choose(0); ASSERT_TRUE(until([&] { return has(0, "STARTED"); }));
-  choose(5); ASSERT_TRUE(until([&] { return handles.size() == 6; }));
+  choose(5); ASSERT_TRUE(until([&] { return handles.size() == 5; }));
   EXPECT_EQ(requested.back().pose.pose.position.x, 1.0);
   EXPECT_TRUE(has(5, "PREEMPTED")); EXPECT_TRUE(has(4, "PREEMPTED"));
   EXPECT_TRUE(has(3, "PREEMPTED"));
@@ -414,4 +416,89 @@ TEST_F(TacticalTest, FeedbackFloodDoesNotStarveGoalResponse)
   ASSERT_TRUE(until([&] { return has(3, "STARTED"); }));
   EXPECT_EQ(cancels, 1);
   EXPECT_TRUE(has(6, "PREEMPTED"));
+}
+
+TEST_F(TacticalTest, ResupplyIgnoresOrdinaryAndDefenseChangesUntilComplete)
+{
+  choose(3); robot.current_hp = 180; robot.projectile_allowance_17mm = 50;
+  set("referee_robotStatus", robot); arrive();
+  choose(6); run(30); choose(4); run(30);
+  EXPECT_EQ(requested.size(), 1U);
+  EXPECT_FALSE(has(3, "PREEMPTED")); EXPECT_FALSE(has(3, "SUCCEEDED"));
+  robot.current_hp = 400; robot.projectile_allowance_17mm = 150;
+  set("referee_robotStatus", robot);
+  ASSERT_TRUE(until([&] { return has(3, "SUCCEEDED"); }));
+  ASSERT_TRUE(until([&] { return handles.size() == 2; }));
+  EXPECT_TRUE(has(4, "STARTED")); EXPECT_EQ(stops, 0);
+}
+
+TEST_F(TacticalTest, FreshDecisionCannotOverrideStaleRefereeDuringResupply)
+{
+  choose(3); ASSERT_TRUE(until([&] { return handles.size() == 1; }));
+  bb->set("referee_robotStatus_stamp_ns", int64_t{1});
+  ASSERT_TRUE(until([&] { return has(3, "PREEMPTED"); }));
+  EXPECT_EQ(cancels, 1); EXPECT_EQ(requested.size(), 1U); EXPECT_EQ(stops, 0);
+}
+
+TEST_F(TacticalTest, GoalFormatsAndInvalidGoals)
+{
+  auto nav = bb->get<std::shared_ptr<Nav>>("tactical_navigation");
+  for (const auto & goal : {"nan;0;0", "0;0;inf", "1;2", "oops;0;0",
+                           "0;0;0;0;0;0;0", "0;0;0;1e308;0;0;1e308"}) {
+    EXPECT_FALSE(nav->start(goal, "navigate_to_pose"));
+    EXPECT_EQ(nav->reason(), "invalid_goal");
+  }
+  set("gather_info_goal", std::string("1;2;3;0;0;2;2"));
+  ASSERT_TRUE(until([&] { return handles.size() == 1; }));
+  EXPECT_EQ(requested[0].pose.header.frame_id, "map");
+  EXPECT_DOUBLE_EQ(requested[0].pose.pose.position.z, 3);
+  EXPECT_NEAR(requested[0].pose.pose.orientation.w, std::sqrt(0.5), 1e-8);
+  choose(0); ASSERT_TRUE(until([&] { return has(0, "STARTED"); }));
+  set("gather_info_goal", std::string("4;5;1.2")); choose(6);
+  ASSERT_TRUE(until([&] { return handles.size() == 2; }));
+  EXPECT_NEAR(requested[1].pose.pose.orientation.z, std::sin(0.6), 1e-8);
+}
+
+TEST_F(TacticalTest, MissingMapAndOccupiedGoalsAreRejected)
+{
+  set("validate_navigation_goals", true);
+  ASSERT_TRUE(until([&] { return has(6, "FAILED"); }));
+  EXPECT_TRUE(requested.empty());
+  nav_msgs::msg::OccupancyGrid map;
+  map.header.frame_id = "map"; map.info.resolution = 1.0;
+  map.info.width = 10; map.info.height = 10; map.info.origin.orientation.w = 1;
+  map.data.assign(100, 100); set("tactical_map", map);
+  choose(5); ASSERT_TRUE(until([&] { return has(5, "FAILED"); }));
+  EXPECT_TRUE(requested.empty());
+  map.data.assign(100, 0); set("tactical_map", map);
+  choose(4); ASSERT_TRUE(until([&] { return handles.size() == 1; }));
+}
+
+TEST_F(TacticalTest, ActionNameCanTargetNamespacedServer)
+{
+  auto other = rclcpp_action::create_server<Nav::Action>(node, "/robot/navigate_to_pose",
+    [](const rclcpp_action::GoalUUID &, std::shared_ptr<const Nav::Action::Goal>) {
+      return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+    }, [](std::shared_ptr<rclcpp_action::ServerGoalHandle<Nav::Action>>) {
+      return rclcpp_action::CancelResponse::ACCEPT;
+    }, [this](std::shared_ptr<rclcpp_action::ServerGoalHandle<Nav::Action>> handle) {
+      handles.push_back(handle);
+    });
+  set("navigation_action_name", std::string("/robot/navigate_to_pose"));
+  ASSERT_TRUE(until([&] { return handles.size() == 1; }));
+  EXPECT_TRUE(requested.empty());
+  choose(0); ASSERT_TRUE(until([&] { return has(0, "STARTED"); }));
+}
+
+TEST_F(TacticalTest, MissingNavigationServerFailsWithoutSending)
+{
+  set("navigation_action_name", std::string("/unavailable/navigate_to_pose"));
+  ASSERT_TRUE(until([&] { return has(6, "FAILED"); }));
+  EXPECT_TRUE(requested.empty());
+  bool unavailable = false;
+  for (const auto & event : events) {
+    unavailable |= event.action == 6 && event.state == "FAILED" &&
+      event.reason == "navigation_server_unavailable";
+  }
+  EXPECT_TRUE(unavailable);
 }

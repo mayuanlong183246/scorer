@@ -123,7 +123,9 @@ TacticalScorerNode::TacticalScorerNode(const rclcpp::NodeOptions & options)
       cover_teammate_hp_threshold_ <= 0 || base_hp_low_ <= 0 || base_hp_low_ > 65535 ||
       outpost_alive_min_hp_ < 0 || outpost_alive_min_hp_ > 65535 ||
       outpost_reference_hp_ <= 0 || outpost_reference_hp_ > 65535 ||
-      decision_hold_ms_ < 0 || failure_cooldown_ms_ < 0 ||
+      decision_hold_ms_ < 0 || failure_cooldown_ms_ < 0 || decision_timeout_ms_ <= 0 ||
+      (team_color_ != "red" && team_color_ != "blue") ||
+      cover_teammate_hp_threshold_ > 65535 ||
       !std::isfinite(action_switch_margin_) || action_switch_margin_ < 0.0F ||
       !std::isfinite(tick_hz_) || tick_hz_ <= 0.0) {
     throw std::invalid_argument("Invalid tactical scorer thresholds, timing, or normalized factors");
@@ -341,15 +343,10 @@ TacticalScorerNode::DecisionDraft TacticalScorerNode::score()
   const double outpost_opportunity = outpost_available ?
     std::clamp(0.5 + 0.5 * (1.0 - outpost_hp / static_cast<double>(outpost_reference_hp_)),
     0.0, 1.0) : 0.0;
-  const double resource_need = std::clamp(1.0 - resource_ready, 0.0, 1.0);
-  const double criticality = resource_low ? std::clamp(std::max({
-    1.0 - hp_ready,
-    1.0 - (robot_status_ ? linear(
-      robot_status_->projectile_allowance_17mm, ammo_critical_, ammo_low_) : 0.0),
-    robot_status_ && robot_status_->shooter_barrel_heat_limit > 0 ?
-      linear(static_cast<double>(robot_status_->shooter_17mm_1_barrel_heat) /
-      robot_status_->shooter_barrel_heat_limit, heat_low_ratio_, heat_critical_ratio_) : 0.0}),
-    0.0, 1.0) : 0.0;
+  const double supply_ready = robot_status_ ? std::min(hp_ready, linear(
+    robot_status_->projectile_allowance_17mm, ammo_critical_, ammo_low_)) : 0.0;
+  const double resource_need = 1.0 - supply_ready;
+  const double criticality = resource_low ? resource_need : 0.0;
   const double threat_level = !defense_threat ? 0.0 :
     (fortress_threat ? 1.0 : std::clamp(
       linear(1.1 * base_hp_low_ - event_data_->base_hp,
@@ -498,10 +495,7 @@ bool TacticalScorerNode::isRobotResourceLow() const
   const bool hp_low = robot_status_->current_hp < static_cast<uint16_t>(std::max(0, hp_low_));
   const bool ammo_low = robot_status_->projectile_allowance_17mm <
     static_cast<uint16_t>(std::max(0, ammo_low_));
-  const bool heat_low = robot_status_->shooter_barrel_heat_limit > 0 &&
-    static_cast<double>(robot_status_->shooter_17mm_1_barrel_heat) /
-    robot_status_->shooter_barrel_heat_limit >= heat_low_ratio_;
-  return hp_low || ammo_low || heat_low;
+  return hp_low || ammo_low;
 }
 
 bool TacticalScorerNode::isRobotResourceCritical() const
@@ -512,10 +506,7 @@ bool TacticalScorerNode::isRobotResourceCritical() const
   const bool hp_critical = robot_status_->current_hp <= static_cast<uint16_t>(std::max(0, hp_critical_));
   const bool ammo_critical = robot_status_->projectile_allowance_17mm <=
     static_cast<uint16_t>(std::max(0, ammo_critical_));
-  const bool heat_critical = robot_status_->shooter_barrel_heat_limit > 0 &&
-    static_cast<double>(robot_status_->shooter_17mm_1_barrel_heat) /
-    robot_status_->shooter_barrel_heat_limit >= heat_critical_ratio_;
-  return hp_critical || ammo_critical || heat_critical;
+  return hp_critical || ammo_critical;
 }
 
 bool TacticalScorerNode::isFresh(const rclcpp::Time & stamp, int timeout_ms) const

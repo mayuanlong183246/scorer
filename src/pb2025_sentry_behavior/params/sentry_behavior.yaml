@@ -29,6 +29,7 @@ pb2025_sentry_behavior_server:
     capture_point_b_dwell_ms: 10000
     gather_info_goal: "5.42;-3.41;0.0"
     gather_info_dwell_ms: 5000  # Continuous time without a fresh target lock
+    navigation_action_name: navigate_to_pose
     navigation_timeout_ms: 60000
     navigation_cancel_timeout_ms: 2000
     action_failure_cooldown_ms: 5000
@@ -93,6 +94,6 @@ tactical_scorer_node:
     # score = importance * geometric_mean(active factors)
     # HP/ammo readiness rises linearly from critical to low; heat readiness
     # falls linearly from heat_low_ratio to heat_critical_ratio.
-    # Resource readiness is their minimum; resupply need is its inverse.
+    # Attack readiness includes heat; resupply need uses HP and ammo only.
     action_importance: [0.05, 0.72, 0.78, 0.90, 0.82, 0.62, 0.58]
     # Failed actions are unavailable during action_failure_cooldown_ms.

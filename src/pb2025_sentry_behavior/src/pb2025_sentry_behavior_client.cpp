@@ -77,8 +77,8 @@ void SentryBehaviorClient::resultCallback(
       RCLCPP_INFO(get_logger(), "Goal succeeded: %s", result.result->return_message.c_str());
       break;
     case rclcpp_action::ResultCode::CANCELED:
-      RCLCPP_WARN(get_logger(), "Goal was canceled.");
-      break;
+      RCLCPP_WARN(get_logger(), "Goal was canceled; restart the client to resume.");
+      return;
     case rclcpp_action::ResultCode::ABORTED:
       RCLCPP_ERROR(get_logger(), "Goal failed: %s", result.result->return_message.c_str());
       break;

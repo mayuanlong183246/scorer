@@ -16,7 +16,6 @@
 #include "behaviortree_cpp/action_node.h"
 #include "behaviortree_cpp/bt_factory.h"
 #include "behaviortree_cpp/control_node.h"
-#include "geometry_msgs/msg/twist.hpp"
 #include "pb2025_sentry_behavior/tactical_navigation.hpp"
 #include "pb2025_sentry_decision_interfaces/msg/tactical_decision.hpp"
 #include "pb2025_sentry_decision_interfaces/msg/tactical_execution.hpp"
@@ -47,17 +46,15 @@ public:
     if (!navigation_) { navigation_ = std::make_shared<TacticalNavigation>(node_); }
     config.blackboard->set("@tactical_navigation", navigation_);
     events_ = node_->create_publisher<Execution>("/tactical_execution", 10);
-    velocity_ = node_->create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 10);
   }
   static BT::PortsList providedPorts() { return {}; }
 
   BT::NodeStatus tick() override
   {
     if (childrenCount() != 7) { throw BT::RuntimeError("TacticalDispatch requires actions 0..6"); }
-    navigation_->poll();
+    navigation_->poll(read<int>(config(), "navigation_cancel_timeout_ms", 2000));
     const auto now = node_->now().nanoseconds();
     if (pending_) {
-      stop();
       if (navigation_->busy()) {
         if (navigation_->cancelUnconfirmed(
               read<int>(config(), "navigation_cancel_timeout_ms", 2000))) {
@@ -71,18 +68,16 @@ public:
     // A restarted tree must preserve the previous tree's cancellation barrier.
     if (active_ < 0 && navigation_->busy()) {
       navigation_->cancel();
-      stop();
       return BT::NodeStatus::RUNNING;
     }
     const auto game = read<pb_rm_interfaces::msg::GameStatus>(config(), "referee_gameStatus");
     if (game.game_progress != game.RUNNING) {
       if (active_ >= 0) { terminate("PREEMPTED", "game_not_running"); }
-      stop();
       return BT::NodeStatus::RUNNING;
     }
     if (read<bool>(config(), "mapping_bootstrap_enabled") &&
         !read<std_msgs::msg::Bool>(config(), "mapping_bootstrap_finished").data) {
-      if (active_ >= 0) { terminate("PREEMPTED", "mapping_not_finished"); stop(); }
+      if (active_ >= 0) { terminate("PREEMPTED", "mapping_not_finished"); }
       return BT::NodeStatus::RUNNING;
     }
 
@@ -90,7 +85,14 @@ public:
     const auto stamp = read<int64_t>(config(), "tactical_decision_stamp_ns");
     const bool fresh = stamp > 0 && now >= stamp && now - stamp <=
       int64_t(read<int>(config(), "decision_timeout_ms", 1000)) * 1000000;
-    const bool valid = fresh && decision.action <= 6;
+    bool inputs_fresh = true;
+    for (const auto & key : {"referee_gameStatus", "referee_robotStatus", "referee_eventData"}) {
+      const auto input_stamp = read<int64_t>(config(), std::string(key) + "_stamp_ns");
+      inputs_fresh = inputs_fresh && config().blackboard->getEntry("@" + std::string(key)) &&
+        input_stamp > 0 && now >= input_stamp && now - input_stamp <=
+        int64_t(read<int>(config(), "referee_data_timeout_ms", 1000)) * 1000000;
+    }
+    const bool valid = fresh && inputs_fresh && decision.action <= 6;
     int desired = valid ? decision.action : Decision::HOLD_SAFE;
     if (desired != 0 && now < cooldown_[desired]) { desired = Decision::HOLD_SAFE; }
     if (!valid || desired != decision.action) {
@@ -99,9 +101,14 @@ public:
       decision.action_name = "HOLD_SAFE";
       decision.emergency = true;
     }
+    // A resupply mission is committed until completion, timeout, or a safety hold.
+    if (active_ == Decision::RESUPPLY_HOME && desired != Decision::HOLD_SAFE) {
+      desired = Decision::RESUPPLY_HOME;
+    }
     if (active_ >= 0 && active_ != desired) {
-      terminate("PREEMPTED", valid ? "decision_changed" : "decision_stale");
-      if (pending_) { stop(); return BT::NodeStatus::RUNNING; }
+      terminate("PREEMPTED", valid ? "decision_changed" :
+        (inputs_fresh ? "decision_stale" : "referee_data_stale"));
+      if (pending_) { return BT::NodeStatus::RUNNING; }
     }
     if (active_ < 0) {
       active_ = desired;
@@ -133,17 +140,14 @@ public:
       pending_ = false;
       config().blackboard->set("@active_tactical_action", -1);
     }
-    stop();
     BT::ControlNode::halt();
   }
 
 private:
-  void stop() { velocity_->publish(geometry_msgs::msg::Twist{}); }
   void terminate(const std::string & state, const std::string & reason)
   {
     haltChild(active_);
     navigation_->cancel();
-    if (state != "SUCCEEDED") { stop(); }
     if (navigation_->busy()) {
       pending_ = true;
       pending_state_ = state;
@@ -174,7 +178,6 @@ private:
   rclcpp::Node::SharedPtr node_;
   std::shared_ptr<TacticalNavigation> navigation_;
   rclcpp::Publisher<Execution>::SharedPtr events_;
-  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr velocity_;
   Decision decision_;
   int active_{-1};
   std::array<int64_t, 7> cooldown_{};
@@ -188,7 +191,6 @@ public:
   TacticalWait(const std::string & name, const BT::NodeConfig & config)
   : BT::StatefulActionNode(name, config), node_(read<rclcpp::Node::SharedPtr>(config, "node"))
   {
-    velocity_ = node_->create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 10);
   }
   static BT::PortsList providedPorts()
   {
@@ -203,7 +205,6 @@ public:
   }
   BT::NodeStatus onRunning() override
   {
-    velocity_->publish(geometry_msgs::msg::Twist{});
     const auto now = node_->now().nanoseconds();
     if (now < started_) { started_ = now; unlocked_since_ = now; }
     const auto mode = getInput<std::string>("mode").value();
@@ -245,7 +246,7 @@ public:
     config().blackboard->set("@tactical_failure_reason", mode + "_timeout");
     return BT::NodeStatus::FAILURE;
   }
-  void onHalted() override { velocity_->publish(geometry_msgs::msg::Twist{}); }
+  void onHalted() override {}
 private:
   bool fresh(const std::string & key, int64_t now) const
   {
@@ -255,7 +256,6 @@ private:
       int64_t(read<int>(config(), "referee_data_timeout_ms", 1000)) * 1000000;
   }
   rclcpp::Node::SharedPtr node_;
-  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr velocity_;
   int64_t started_{0}, unlocked_since_{0};
 };
 }  // namespace pb2025_sentry_behavior

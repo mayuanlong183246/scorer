@@ -29,6 +29,7 @@
 #include "pb_rm_interfaces/msg/rfid_status.hpp"
 #include "pb_rm_interfaces/msg/robot_status.hpp"
 #include "pb2025_sentry_behavior/custom_types.hpp"
+#include "pb2025_sentry_behavior/tactical_navigation.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/int32.hpp"
 namespace pb2025_sentry_behavior
@@ -63,6 +64,14 @@ SentryBehaviorServer::SentryBehaviorServer(const rclcpp::NodeOptions & options)
   last_tactical_decision_stamp_(0, 0, RCL_ROS_TIME)
 {
   globalBlackboard()->set("node", node());
+  auto navigation = std::make_shared<TacticalNavigation>(node());
+  globalBlackboard()->set("tactical_navigation", navigation);
+  // Keep processing late acceptance/cancellation even when no tree is ticking.
+  std::weak_ptr<TacticalNavigation> weak_navigation = navigation;
+  const auto navigation_action = node()->declare_parameter<std::string>(
+    "navigation_action_name", "navigate_to_pose");
+  if (navigation_action.empty()) { throw std::invalid_argument("navigation_action_name is empty"); }
+  globalBlackboard()->set("navigation_action_name", navigation_action);
   globalBlackboard()->set("validate_navigation_goals",
     node()->declare_parameter("validate_navigation_goals", false));
   subscribe<nav_msgs::msg::OccupancyGrid>("map", "tactical_map",
@@ -113,6 +122,11 @@ SentryBehaviorServer::SentryBehaviorServer(const rclcpp::NodeOptions & options)
     if (value <= 0) { throw std::invalid_argument(parameter.first + " must be positive"); }
     globalBlackboard()->set(parameter.first, value);
   }
+  const int cancel_timeout = node()->get_parameter("navigation_cancel_timeout_ms").as_int();
+  navigation_timer_ = node()->create_wall_timer(std::chrono::milliseconds(20),
+    [weak_navigation, cancel_timeout]() {
+      if (auto transport = weak_navigation.lock()) { transport->poll(cancel_timeout); }
+    });
   const auto target_locked_topic = node()->declare_parameter<std::string>(
     "target_locked_topic", "/auto_aim/target_locked");
   subscribe<std_msgs::msg::Bool>(target_locked_topic, "auto_aim_target_locked");
@@ -142,6 +156,17 @@ SentryBehaviorServer::SentryBehaviorServer(const rclcpp::NodeOptions & options)
   node()->get_parameter("cover_side_offset", cover_side_offset);
   node()->get_parameter("cover_side_sign", cover_side_sign);
 
+  if (decision_timeout_ms <= 0 || teammate_data_timeout_ms <= 0 ||
+      cover_teammate_hp_threshold <= 0 || cover_teammate_hp_threshold > 65535 ||
+      outpost_alive_min_hp < 0 || outpost_alive_min_hp > 65535 ||
+      (team_color != "red" && team_color != "blue") ||
+      !std::isfinite(cover_home_reference_x) || !std::isfinite(cover_home_reference_y) ||
+      !std::isfinite(cover_rear_distance) || cover_rear_distance < 0 ||
+      !std::isfinite(cover_side_offset) || !std::isfinite(cover_side_sign) ||
+      node()->get_parameter("resupply_hp_target").as_int() > 65535 ||
+      node()->get_parameter("resupply_ammo_target").as_int() > 65535) {
+    throw std::invalid_argument("Invalid tactical execution configuration");
+  }
   globalBlackboard()->set("decision_timeout_ms", decision_timeout_ms);
   globalBlackboard()->set("team_color", team_color);
   globalBlackboard()->set("sentry_robot_id", sentry_robot_id);
@@ -166,7 +191,8 @@ SentryBehaviorServer::SentryBehaviorServer(const rclcpp::NodeOptions & options)
   for (const auto & name : duration_parameter_names) {
     int value = 0;
     node()->get_parameter(name, value);
-    globalBlackboard()->set(name, std::max(value, 0));
+    if (value < 0) { throw std::invalid_argument(name + " must be nonnegative"); }
+    globalBlackboard()->set(name, value);
   }
   RCLCPP_INFO(
     node()->get_logger(), "%s",

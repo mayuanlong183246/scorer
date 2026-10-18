@@ -36,7 +36,9 @@ public:
   {
     navigation_ = config().blackboard->get<std::shared_ptr<TacticalNavigation>>(
       "@tactical_navigation");
-    started_ = node_->now().nanoseconds();
+    started_ = std::chrono::steady_clock::now();
+    const auto timeout = getInput<int>("timeout_ms");
+    if (!timeout || *timeout <= 0) { return fail("invalid_navigation_timeout"); }
     auto goal = getInput<std::string>("goal");
     if (!goal) { return fail("missing_goal"); }
     bool validate = false;
@@ -52,8 +54,8 @@ public:
     if (!navigation_->busy()) {
       return navigation_->succeeded() ? BT::NodeStatus::SUCCESS : fail(navigation_->reason());
     }
-    if (node_->now().nanoseconds() - started_ >=
-        int64_t(getInput<int>("timeout_ms").value()) * 1000000) {
+    if (std::chrono::steady_clock::now() - started_ >=
+        std::chrono::milliseconds(getInput<int>("timeout_ms").value())) {
       navigation_->cancel();
       return fail("navigation_timeout");
     }
@@ -90,7 +92,7 @@ private:
   }
   rclcpp::Node::SharedPtr node_;
   std::shared_ptr<TacticalNavigation> navigation_;
-  int64_t started_{0};
+  std::chrono::steady_clock::time_point started_;
 };
 }  // namespace pb2025_sentry_behavior
 CreateRosNodePlugin(pb2025_sentry_behavior::TacticalNavigateToPoseAction, "TacticalNavigateToPose");

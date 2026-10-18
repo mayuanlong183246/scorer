@@ -1,26 +1,29 @@
 # 哨兵实车战术导航测试
 
-## 启动与隔离
+## 独立启动与接口约定
+
+由导航负责人先启动导航、定位和底盘。决策侧只运行：
 
 ```bash
 source /opt/ros/humble/setup.bash
 source install/setup.bash
-# 使用真实裁判数据
-ros2 launch pb2025_sentry_behavior sentry_tactical_real_test.launch.py \
-  map:=/path/to/RMUC26.yaml rviz:=true
-
-# 使用独立裁判模拟器（与真实裁判二选一）
-ros2 launch pb2025_sentry_behavior sentry_referee_simulator.launch.py scenario:=match
-ros2 launch rm_serial_driver serial_driver.launch.py publish_referee_topics:=false
-ros2 launch pb2025_sentry_behavior sentry_tactical_real_test.launch.py \
-  map:=/path/to/RMUC26.yaml rviz:=true
+ros2 launch pb2025_sentry_behavior sentry_decision_real.launch.py \
+  params_file:=/absolute/path/to/real_decision.yaml \
+  navigation_action_name:=/navigate_to_pose team_color:=blue
 ```
 
-该入口使用 `use_sim_time=false`、现有 `rm_navigation_reality_launch.py`、地图与 Nav2 参数。评分器统一订阅标准 `/referee/*` 话题；模拟器联调时串口驱动必须使用 `publish_referee_topics:=false`，此时速度发送仍然启用。模拟器发现任意 `/referee/*` 重复发布者会立即报错退出。模拟器默认 `scenario:=match`，会自动经历准备、倒计时并进入 `RUNNING`；需要验证安全门时使用 `scenario:=hold_safe`。真实视觉保留 `/tracker/target`。
+参数文件沿用 `params/sentry_behavior.yaml` 三个节点的结构，必须先按实车地图标定目标点。
+入口不读取导航参数、不启动或修改导航节点；仅依赖标准 Nav2 消息和工具库，无需导航源码包。
+旧 `sentry_tactical_real_test.launch.py` 为联合测试入口，仍保留导航包依赖，不用于独立部署。
 
-正式速度链路为 Nav2 → velocity_smoother → fake_vel_transform → `/cmd_vel_base_real_yaw` → `rm_serial_driver`。fake_vel_transform 不依赖 local_plan，以固定频率发布；命令超过 300 ms 或 odometry 超过 500 ms 未更新时持续发布零速。测试 gate 仅在独立回归测试中使用，不在此正式入口启动。
+导航提供 `nav2_msgs/action/NavigateToPose`、`map` 坐标系及 `map` 地图话题。
+目标在行为树发送前验证，动态掩护目标同样校验；路径可达性和碰撞检测由导航负责。
+取消当前目标后必须等待终态，超过 2 秒仅告警并继续阻止新目标，不以超时强行放行。
+战术节点不发送零速度，取消后的停车及底盘残留速度处理由导航侧完成。
 
-启动后应确认每个裁判话题只有模拟器发布者、`/tracker/target` 只有视觉发布者，并确认 `/map`、`map→odom`、`odom→gimbal_yaw_fake`、定位和 Nav2 lifecycle 均正常。启动前入口会检查所有战术目标在地图范围内且处于空闲栅格；掩护目标在行为树执行前仍由地图验证节点复核。
+真实裁判与模拟器二选一，确认 `/referee/*` 不存在重复发布者。模拟器命令仅用于受控联调。
+`namespace` 非空时相对输入话题跟随命名空间，Action 可用绝对名称指向导航服务。
+以下诊断中的速度、TF 和导航话题按导航负责人提供的实际名称替换。
 
 ## MPPI 诊断
 
@@ -75,13 +78,19 @@ ros2 param set /sentry_referee_simulator scenario game_over
 
 ## 验收顺序
 
-1. 门控关闭：检查七动作诊断、场景数据一致性、地图和定位。
-2. 依次执行侦察、占点、掩护、前哨、补给、基地/堡垒防守；每项记录 Nav2 结果和最终位姿。
-3. 普通切换：`gather_info → defend_base → capture_point → hold_safe`，确认旧目标终态后才发新目标。
-4. 故障：暂停 `game_status`、停止评分器、切 `game_over`、发送临界 HP；确认只输出零速，恢复数据后能重新执行。
-5. 连续演练：人工场景序列通过后再执行整场演练。
+1. 未开赛和关键数据缺失时不导航；检查地图、定位、裁判输入和诊断。
+2. 单目标：确认目标内容、UUID、导航结果及实际到达位置；再测试队友掩护动态目标。
+3. 主动取消：停赛或安全等待触发取消；同时记录取消响应、目标终态和车辆实际停止。
+4. 普通切换：确认旧目标终态后才发新目标；取消拒绝或无终态时必须阻止新目标。
+5. 补给保持：血量 180、弹量 50 不提前退出；即使回防评分升高也继续补给，
+   到血量 400、弹量 150 才完成；到点 30 秒未完成则失败冷却。热量单独升高不回家。
+6. 输入故障：分别暂停裁判关键话题、停止评分器、切换停赛；必须取消导航并停止发送新目标。
+7. 外部取消整个行为树，确认服务端继续处理导航取消，客户端不会自动重启任务。
+8. 恢复输入和导航后检查调度恢复，再做连续演练。
 
-通过条件：导航成功且位置误差不超过 0.25 m；无重叠 Nav2 goal；取消请求到目标终态不超过 2 s；显式停止后最终零速命令在 0.2 s 内；裁判/决策断流后在配置超时加 0.2 s 内。车辆实际停车距离单独用现场测量记录。
+软件通过条件：无重叠目标；取消未确认不能放行；非法目标不发送；无决策速度发布。
+正常导航取消目标终态期望在 2 秒内，超过则记录告警和导航故障。
+实际停车延迟、距离及允许误差由现场与导航负责人约定并实测，不能用 Action 响应代替实测。
 
 ## 记录
 
@@ -97,3 +106,25 @@ ros2 bag record -o sentry_real_test \
 ```
 
 每项记录：日期、地图/参数版本、起止时间、场景、期望动作、实际动作、目标点、起止位姿、Nav2 结果、取消耗时、软件零速延迟、实际停车距离、异常日志和 rosbag 路径。自动回归结果与现场实测结果分开保存。
+
+## 本次软件回归记录（2026-10-18）
+
+- 环境：ROS 2 Humble、BehaviorTree.CPP 4.9.0；从仅含决策及五个源码依赖包的独立工作区构建。
+- 已确认 `pb2025_nav_bringup` 不可发现，决策独立入口仍正常启动三个决策节点。
+- `test_tactical_scorer`：14 项通过；`test_tactical_execution`：31 项通过。
+- `test_referee_gate`、`test_tactical_server`、`test_decision_launch` 三组通过。
+- 覆盖延迟接受后的取消、取消拒绝时阻止新目标、树停止后的取消回调、
+  外部取消不自动重启、补给保持、热量不回家、关键数据过期和目标校验。
+- 测试使用 `ROS_LOCALHOST_ONLY=1`、`ROS_DOMAIN_ID=157` 和模拟 Action 服务，未连接实车。
+- 本机用户 Python 依赖冲突通过 `PYTHONNOUSERSITE=1` 隔离，未修改系统环境。
+- 尚未验证真实导航取消后的底盘停车延迟、距离及实际地图上的到达精度。
+
+完成编译后可运行功能回归（使用独立 ROS 域，避免连接实车）：
+
+```bash
+source install/setup.bash
+ROS_LOCALHOST_ONLY=1 ROS_DOMAIN_ID=157 PYTHONNOUSERSITE=1 \
+  colcon test --packages-select pb2025_sentry_behavior \
+  --ctest-args -R '^test_(tactical_scorer|tactical_execution|tactical_server|referee_gate|decision_launch)$' -j1
+colcon test-result --verbose
+```

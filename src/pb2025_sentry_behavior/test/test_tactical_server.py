@@ -21,13 +21,15 @@ import tempfile
 import time
 
 import rclpy
-from rclpy.action import ActionClient, ActionServer
+from rclpy.action import ActionClient, ActionServer, CancelResponse
+from rclpy.task import Future
+from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.qos import DurabilityPolicy, QoSProfile
 from btcpp_ros2_interfaces.action import ExecuteTree
 from geometry_msgs.msg import Twist
 from nav2_msgs.action import NavigateToPose
 from pb2025_sentry_decision_interfaces.msg import TacticalDecision, TacticalExecution
-from pb_rm_interfaces.msg import GameStatus
+from pb_rm_interfaces.msg import GameStatus, RobotStatus, EventData
 from std_msgs.msg import Bool
 
 
@@ -43,6 +45,8 @@ def main():
     mapping = node.create_publisher(Bool, '/mapping_bootstrap_finished', latched)
     mapping.publish(Bool(data=True))
     games = node.create_publisher(GameStatus, '/referee/game_status', 10)
+    robots = node.create_publisher(RobotStatus, '/referee/robot_status', 10)
+    referee_events = node.create_publisher(EventData, '/referee/event_data', 10)
     decisions = node.create_publisher(TacticalDecision, '/tactical_decision', 10)
     locks = node.create_publisher(Bool, '/auto_aim/target_locked', 10)
     events = []
@@ -50,11 +54,24 @@ def main():
     node.create_subscription(TacticalExecution, '/tactical_execution', events.append, 10)
     node.create_subscription(Twist, '/cmd_vel', stops.append, 10)
 
-    def navigate(handle):
-        handle.succeed()
+    hold_navigation = False
+    pending_navigation = []
+    canceled_navigation = []
+
+    async def navigate(handle):
+        if hold_navigation:
+            done = Future()
+            pending_navigation.append((handle, done))
+            await done
+            handle.canceled()
+            canceled_navigation.append(handle)
+        else:
+            handle.succeed()
         return NavigateToPose.Result()
 
-    navigation = ActionServer(node, NavigateToPose, '/navigate_to_pose', navigate)
+    navigation = ActionServer(node, NavigateToPose, '/navigate_to_pose', navigate,
+                              cancel_callback=lambda _: CancelResponse.ACCEPT,
+                              callback_group=ReentrantCallbackGroup())
     with tempfile.TemporaryFile(mode='w+') as log:
         proc = subprocess.Popen([
             args.server, '--ros-args', '-r', '__node:=pb2025_sentry_behavior_server',
@@ -73,9 +90,14 @@ def main():
                 end = time.monotonic() + seconds
                 while time.monotonic() < end:
                     games.publish(game)
+                    robots.publish(RobotStatus(current_hp=400, projectile_allowance_17mm=150))
+                    referee_events.publish(EventData(base_hp=10000))
                     decisions.publish(decision)
                     locks.publish(lock)
                     rclpy.spin_once(node, timeout_sec=0.01)
+                    for nav_handle, done in pending_navigation:
+                        if nav_handle.is_cancel_requested and not done.done():
+                            done.set_result(True)
 
             pump(0.4)
             future = client.send_goal_async(ExecuteTree.Goal(target_tree='sentry_tactical'))
@@ -86,7 +108,7 @@ def main():
             pump(0.5)
             assert any(e.action == 0 and e.state == 'STARTED' and e.decision_id == 7001
                        for e in events), events
-            assert stops, 'no hold stop'
+            assert not stops, 'decision must not publish velocity'
             decision.action = 6
             decision.decision_id = 7002
             pump(0.6)
@@ -106,6 +128,24 @@ def main():
             rclpy.spin_until_future_complete(node, cancel, timeout_sec=3)
             rclpy.spin_until_future_complete(node, result, timeout_sec=3)
             assert result.done(), 'tree did not stop'
+            # Halt a tree while navigation is active: cancellation must complete
+            # even though the BT dispatcher is no longer polling its transport.
+            game.game_progress = 4
+            decision.action = 6
+            decision.decision_id = 7004
+            hold_navigation = True
+            pump(0.1)
+            future = client.send_goal_async(ExecuteTree.Goal(target_tree='sentry_tactical'))
+            rclpy.spin_until_future_complete(node, future, timeout_sec=3)
+            active_tree = future.result()
+            assert active_tree and active_tree.accepted
+            pump(0.4)
+            assert pending_navigation, 'navigation never started'
+            halted = active_tree.cancel_goal_async()
+            rclpy.spin_until_future_complete(node, halted, timeout_sec=3)
+            pump(0.5)
+            assert canceled_navigation, 'navigation cancellation stopped with the tree'
+            assert not stops, 'decision must not publish velocity'
             print('PASS: server parameters, plugins, latched mapping, lock status, '
                   'whole-action feedback and game end')
         except BaseException:

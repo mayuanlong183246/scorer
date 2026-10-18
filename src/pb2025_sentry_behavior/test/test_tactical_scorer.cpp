@@ -334,3 +334,21 @@ TEST_F(ScorerTest, WarningBandAndCriticalBaseAreExecutableCandidates)
   run(60);
   EXPECT_EQ(lastDecision().action, Decision::GATHER_INFO);
 }
+
+TEST_F(ScorerTest, HeatAloneDoesNotTriggerResupply)
+{
+  robot.shooter_17mm_1_barrel_heat = 400;
+  start();
+  EXPECT_NE(lastDecision().action, Decision::RESUPPLY_HOME);
+  EXPECT_FALSE(lastDecision().emergency);
+  robot.current_hp = 100; run(100);
+  EXPECT_EQ(lastDecision().action, Decision::RESUPPLY_HOME);
+}
+
+TEST_F(ScorerTest, RejectsInvalidDecisionTimeout)
+{
+  rclcpp::NodeOptions options;
+  options.parameter_overrides({rclcpp::Parameter("decision_timeout_ms", 0)});
+  EXPECT_THROW(std::make_shared<pb2025_sentry_behavior::TacticalScorerNode>(options),
+               std::invalid_argument);
+}

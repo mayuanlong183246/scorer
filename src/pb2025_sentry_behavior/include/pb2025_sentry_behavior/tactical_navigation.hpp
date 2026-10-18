@@ -19,6 +19,7 @@
 #include <iomanip>
 #include <sstream>
 #include <memory>
+#include <mutex>
 #include <string>
 
 #include "behaviortree_cpp/basic_types.h"
@@ -30,7 +31,7 @@
 
 namespace pb2025_sentry_behavior
 {
-// One transport per tree. It remains alive and is polled even after a leaf is halted,
+// One shared transport per server. It is polled even after the tree is halted,
 // so delayed goal acceptance and cancellation results cannot escape the handoff barrier.
 class TacticalNavigation : public std::enable_shared_from_this<TacticalNavigation>
 {
@@ -47,33 +48,48 @@ public:
     goals_ = node_->create_publisher<geometry_msgs::msg::PoseStamped>("/tactical_goal", 10);
   }
 
-  void poll()
+  void poll(int cancel_timeout_ms = 2000)
   {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     // Humble actions multiplex feedback, status and service responses in one
     // waitable. spin_some services it only once per BT tick; frequent Nav2
     // feedback can starve goal acceptance/cancel responses at a 5 Hz tick.
     executor_.spin_all(std::chrono::milliseconds(5));
+    if (cancelUnconfirmed(cancel_timeout_ms) && !cancel_reported_) {
+      cancel_reported_ = true;
+      report("navigation_cancel_unconfirmed");
+    }
   }
-  bool busy() const { return busy_; }
-  bool succeeded() const { return success_; }
-  const std::string & reason() const { return reason_; }
+  bool busy() const { std::lock_guard<std::recursive_mutex> lock(mutex_); return busy_; }
+  bool succeeded() const { std::lock_guard<std::recursive_mutex> lock(mutex_); return success_; }
+  std::string reason() const { std::lock_guard<std::recursive_mutex> lock(mutex_); return reason_; }
   bool cancelUnconfirmed(int timeout_ms) const
   {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     return busy_ && cancel_requested_ &&
            steadyNow() - cancel_stamp_ >= int64_t(timeout_ms) * 1000000;
   }
 
   bool start(const std::string & text, const std::string & action_name)
   {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     if (busy_) { return false; }
     success_ = false;
     reason_.clear();
     cancel_requested_ = false;
     cancel_sent_ = false;
+    cancel_reported_ = false;
     handle_.reset();
-    if (!client_ || action_name != action_name_) {
-      action_name_ = action_name;
-      client_ = rclcpp_action::create_client<Action>(node_, action_name, group_);
+    try {
+      if (action_name.empty()) { throw std::invalid_argument("empty action name"); }
+      if (!client_ || action_name != action_name_) {
+        auto client = rclcpp_action::create_client<Action>(node_, action_name, group_);
+        client_ = std::move(client);
+        action_name_ = action_name;
+      }
+    } catch (const std::exception &) {
+      reason_ = "invalid_action_name";
+      return false;
     }
     if (!client_->action_server_is_ready()) {
       reason_ = "navigation_server_unavailable";
@@ -99,7 +115,7 @@ public:
         p.position.z = values[2];
         const double norm = std::sqrt(values[3] * values[3] + values[4] * values[4] +
                                      values[5] * values[5] + values[6] * values[6]);
-        if (norm < 1e-9) { throw std::runtime_error("zero quaternion"); }
+        if (!std::isfinite(norm) || norm < 1e-9) { throw std::runtime_error("zero quaternion"); }
         p.orientation.x = values[3] / norm; p.orientation.y = values[4] / norm;
         p.orientation.z = values[5] / norm; p.orientation.w = values[6] / norm;
       }
@@ -147,6 +163,7 @@ public:
 
   void cancel()
   {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     if (!busy_ || cancel_requested_) { return; }
     cancel_requested_ = true;
     cancel_stamp_ = steadyNow();
@@ -195,6 +212,7 @@ private:
     diagnostics_->publish(message);
     RCLCPP_INFO(node_->get_logger(), "[Navigation] %s", message.data.c_str());
   }
+  mutable std::recursive_mutex mutex_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr diagnostics_;
   rclcpp::Node::SharedPtr node_;
   rclcpp::CallbackGroup::SharedPtr group_;
@@ -206,5 +224,6 @@ private:
   uint64_t generation_{0};
   int64_t cancel_stamp_{0};
   bool busy_{false}, success_{false}, cancel_requested_{false}, cancel_sent_{false};
+  bool cancel_reported_{false};
 };
 }  // namespace pb2025_sentry_behavior

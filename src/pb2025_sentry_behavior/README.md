@@ -11,6 +11,38 @@
 
 基于 [BehaviorTree.CPP](https://github.com/BehaviorTree/BehaviorTree.CPP) 和 [BehaviorTree.ROS2](https://github.com/BehaviorTree/BehaviorTree.ROS2) 的行为树框架与插件，用于 [RoboMaster](https://www.robomaster.com) 2025 赛季哨兵机器人。
 
+## 当前战术决策与实车入口
+
+决策链路为 `TacticalScorer → TacticalDispatch → TacticalNavigateToPose → TacticalNavigation`
+→ Nav2 的 `nav2_msgs/action/NavigateToPose`。导航同事独立启动导航；决策不修改其配置。
+`SendNav2Goal` 继续供旧行为树使用，战术链路兼容它的 `x;y;yaw` / `x;y;z;qx;qy;qz;qw`
+目标格式和 `map` 坐标系。新链路统一管理当前目标、主动取消和终态确认，不要同时运行旧树控制同一机器人。
+
+```bash
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+ros2 launch pb2025_sentry_behavior sentry_decision_real.launch.py \
+  params_file:=/absolute/path/to/real_decision.yaml team_color:=blue \
+  navigation_action_name:=/navigate_to_pose
+```
+
+该入口仅启动评分器、行为树服务端和客户端，真实时间、20 Hz tick、5 Hz 评分，
+单段导航超时 180 秒，取消未确认 2 秒告警。从 `map` 话题获取地图；地图缺失、
+目标不在自由栅格时拒绝发送。请在参数文件中用实车地图标定各战术目标。
+`namespace:=robot` 将节点和相对输入话题放入 `/robot`；导航 Action 可传完整绝对名称。
+战术诊断话题仍为 `/tactical_decision`、`/tactical_execution`、`/tactical_navigation_status`。
+
+取消仅针对自身当前目标；晚到的接受响应仍会触发取消，收到目标终态前不发新目标。
+树停止后服务端继续处理取消回调；外部取消行为树后客户端不会自动重启，恢复时重新启动客户端。
+战术节点不发布 `/cmd_vel`；导航侧必须落实取消后的停车，底盘实际停车需要现场验收。
+
+补给在血量达到 400 且弹量达到 150 后完成，默认到点等待超时 30 秒，均可配置。
+普通评分变化及回防评分不打断补给，停赛、裁判/决策失效或外部取消仍可打断。
+热量仅影响进攻评分，不触发补给；射击热控由射击侧负责。
+
+部署和验收见 [REAL_ROBOT_TEST_PLAN.md](REAL_ROBOT_TEST_PLAN.md)。旧联合导航测试入口
+`sentry_tactical_real_test.launch.py` 仍依赖导航源码包，新机器应使用上述独立入口。
+
 ## 2. Quick Start
 
 ### 2.1 Setup Environment

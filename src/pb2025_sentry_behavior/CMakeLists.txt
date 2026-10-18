@@ -143,6 +143,10 @@ if(BUILD_TESTING)
   ament_add_test(test_referee_gate GENERATE_RESULT_FOR_RETURN_CODE_ZERO
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_referee_gate.py
     TIMEOUT 30)
+  ament_add_test(test_decision_launch GENERATE_RESULT_FOR_RETURN_CODE_ZERO
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_decision_launch.py
+      --launch ${CMAKE_CURRENT_SOURCE_DIR}/launch/sentry_decision_real.launch.py
+    TIMEOUT 30)
   ament_add_test(test_tactical_server GENERATE_RESULT_FOR_RETURN_CODE_ZERO
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_tactical_server.py
       --server $<TARGET_FILE:pb2025_sentry_behavior_server>
@@ -156,7 +160,7 @@ if(BUILD_TESTING)
   target_compile_definitions(test_tactical_scorer PRIVATE TACTICAL_SCORER_NO_MAIN)
   ament_add_gtest(test_tactical_execution test/test_tactical_execution.cpp TIMEOUT 90)
   ament_target_dependencies(test_tactical_execution rclcpp rclcpp_action nav2_msgs
-    geometry_msgs std_msgs pb_rm_interfaces pb2025_sentry_decision_interfaces behaviortree_ros2)
+    geometry_msgs nav_msgs std_msgs pb_rm_interfaces pb2025_sentry_decision_interfaces behaviortree_ros2)
   target_include_directories(test_tactical_execution PRIVATE include)
   target_compile_definitions(test_tactical_execution PRIVATE PLUGIN_DIR="$<TARGET_FILE_DIR:tactical_execution>")
   add_dependencies(test_tactical_execution tactical_execution tactical_nodes tactical_navigate_to_pose)
