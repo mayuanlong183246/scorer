@@ -21,6 +21,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <utility>
 
 #include "behaviortree_cpp/basic_types.h"
 #include "geometry_msgs/msg/pose_stamped.hpp"
@@ -44,7 +45,8 @@ public:
     executor_.add_callback_group(group_, node_->get_node_base_interface());
     action_name_ = "navigate_to_pose";
     client_ = rclcpp_action::create_client<Action>(node_, action_name_, group_);
-    diagnostics_ = node_->create_publisher<std_msgs::msg::String>("/tactical_navigation_status", 10);
+    diagnostics_ = node_->create_publisher<std_msgs::msg::String>(
+      "/tactical_navigation_status", 10);
     goals_ = node_->create_publisher<geometry_msgs::msg::PoseStamped>("/tactical_goal", 10);
   }
 
@@ -70,6 +72,19 @@ public:
            steadyNow() - cancel_stamp_ >= int64_t(timeout_ms) * 1000000;
   }
 
+  bool actionServerReady(const std::string & action_name)
+  {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    if (!configureClient(action_name)) { return false; }
+    return client_->action_server_is_ready();
+  }
+
+  void reportWaitingForServer(const std::string & action_name)
+  {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    report("waiting_for_server action=" + action_name);
+  }
+
   bool start(const std::string & text, const std::string & action_name)
   {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
@@ -80,17 +95,7 @@ public:
     cancel_sent_ = false;
     cancel_reported_ = false;
     handle_.reset();
-    try {
-      if (action_name.empty()) { throw std::invalid_argument("empty action name"); }
-      if (!client_ || action_name != action_name_) {
-        auto client = rclcpp_action::create_client<Action>(node_, action_name, group_);
-        client_ = std::move(client);
-        action_name_ = action_name;
-      }
-    } catch (const std::exception &) {
-      reason_ = "invalid_action_name";
-      return false;
-    }
+    if (!configureClient(action_name)) { return false; }
     if (!client_->action_server_is_ready()) {
       reason_ = "navigation_server_unavailable";
       return false;
@@ -156,7 +161,7 @@ public:
       reason_ = "navigation_send_failed";
       return false;
     }
-    report("goal_sent");
+    report("goal_sent target=" + text);
     goals_->publish(goal.pose);
     return true;
   }
@@ -172,6 +177,25 @@ public:
   }
 
 private:
+  bool configureClient(const std::string & action_name)
+  {
+    try {
+      if (action_name.empty()) { throw std::invalid_argument("empty action name"); }
+      if (!client_ || action_name != action_name_) {
+        auto client = rclcpp_action::create_client<Action>(node_, action_name, group_);
+        client_ = std::move(client);
+        action_name_ = action_name;
+      }
+      if (reason_ == "invalid_action_name" || reason_ == "navigation_server_unavailable") {
+        reason_.clear();
+      }
+      return true;
+    } catch (const std::exception &) {
+      reason_ = "invalid_action_name";
+      return false;
+    }
+  }
+
   void sendCancel()
   {
     if (!handle_ || cancel_sent_ || !busy_) { return; }

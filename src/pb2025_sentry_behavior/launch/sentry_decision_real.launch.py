@@ -17,7 +17,7 @@ def generate_launch_description():
         'namespace': '',
         'params_file': os.path.join(get_package_share_directory('pb2025_sentry_behavior'),
                                     'params', 'sentry_behavior.yaml'),
-        'navigation_action_name': 'navigate_to_pose',
+        'navigation_action_name': '/navigate_to_pose',
         'team_color': 'blue',
     }
     namespace = LaunchConfiguration('namespace')
@@ -26,6 +26,8 @@ def generate_launch_description():
         param_rewrites={'use_sim_time': 'false', 'tick_frequency': '20', 'tick_hz': '5.0',
                         'navigation_timeout_ms': '180000',
                         'navigation_cancel_timeout_ms': '2000',
+                        'navigation_server_wait_timeout_ms': '10000',
+                        'referee_data_timeout_ms': '3000',
                         'target_tree': 'sentry_tactical',
                         'navigation_action_name': LaunchConfiguration('navigation_action_name'),
                         'team_color': LaunchConfiguration('team_color')},

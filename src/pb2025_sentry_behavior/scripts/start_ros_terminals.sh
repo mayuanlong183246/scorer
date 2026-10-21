@@ -7,7 +7,7 @@ ROS_SETUP="/opt/ros/humble/setup.bash"
 WS_SETUP="${WORKSPACE_DIR}/install/setup.bash"
 
 CMD1="source '${ROS_SETUP}' && source '${WS_SETUP}' && ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py world:=test18 slam:=False use_robot_state_pub:=True"
-CMD2="source '${ROS_SETUP}' && source '${WS_SETUP}' && ros2 launch pb2025_sentry_behavior pb2025_sentry_behavior_launch.py"
+CMD2="source '${ROS_SETUP}' && source '${WS_SETUP}' && ros2 launch pb2025_sentry_behavior sentry_decision_real.launch.py navigation_action_name:=/navigate_to_pose team_color:=blue"
 CMD3="source '${ROS_SETUP}' && source '${WS_SETUP}' && ros2 launch rm_serial_driver serial_driver.launch.py"
 
 launch_one_terminal() {

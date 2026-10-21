@@ -30,31 +30,57 @@ public:
   {
     return {BT::InputPort<std::string>("goal"),
       BT::InputPort<std::string>("action_name", "navigate_to_pose", "Nav2 action name"),
-      BT::InputPort<int>("timeout_ms", 60000, "Per-leg navigation timeout")};
+      BT::InputPort<int>("timeout_ms", 60000, "Per-leg navigation timeout"),
+      BT::InputPort<int>("server_wait_timeout_ms", 10000, "Nav2 server startup timeout")};
   }
   BT::NodeStatus onStart() override
   {
     navigation_ = config().blackboard->get<std::shared_ptr<TacticalNavigation>>(
       "@tactical_navigation");
-    started_ = std::chrono::steady_clock::now();
+    wait_started_ = std::chrono::steady_clock::now();
+    navigation_started_ = false;
+    waiting_reported_ = false;
     const auto timeout = getInput<int>("timeout_ms");
     if (!timeout || *timeout <= 0) { return fail("invalid_navigation_timeout"); }
-    auto goal = getInput<std::string>("goal");
+    const auto wait_timeout = getInput<int>("server_wait_timeout_ms");
+    if (!wait_timeout || *wait_timeout <= 0) { return fail("invalid_server_wait_timeout"); }
+    const auto goal = getInput<std::string>("goal");
     if (!goal) { return fail("missing_goal"); }
+    goal_ = *goal;
+    action_name_ = getInput<std::string>("action_name").value();
     bool validate = false;
     (void)config().blackboard->get("@validate_navigation_goals", validate);
-    if (validate && !validMapGoal(*goal)) { return fail("goal_outside_free_map"); }
-    if (!navigation_->start(*goal, getInput<std::string>("action_name").value())) {
-      return fail(navigation_->busy() ? "navigation_handoff_pending" : navigation_->reason());
-    }
-    return BT::NodeStatus::RUNNING;
+    if (validate && !validMapGoal(goal_)) { return fail("goal_outside_free_map"); }
+    return onRunning();
   }
   BT::NodeStatus onRunning() override
   {
+    if (!navigation_started_) {
+      if (!navigation_->actionServerReady(action_name_)) {
+        if (navigation_->reason() == "invalid_action_name") {
+          return fail("invalid_action_name");
+        }
+        if (!waiting_reported_) {
+          navigation_->reportWaitingForServer(action_name_);
+          waiting_reported_ = true;
+        }
+        if (std::chrono::steady_clock::now() - wait_started_ >=
+            std::chrono::milliseconds(getInput<int>("server_wait_timeout_ms").value())) {
+          return fail("navigation_server_unavailable");
+        }
+        return BT::NodeStatus::RUNNING;
+      }
+      if (!navigation_->start(goal_, action_name_)) {
+        return fail(navigation_->busy() ? "navigation_handoff_pending" : navigation_->reason());
+      }
+      navigation_started_ = true;
+      navigation_started_at_ = std::chrono::steady_clock::now();
+      return BT::NodeStatus::RUNNING;
+    }
     if (!navigation_->busy()) {
       return navigation_->succeeded() ? BT::NodeStatus::SUCCESS : fail(navigation_->reason());
     }
-    if (std::chrono::steady_clock::now() - started_ >=
+    if (std::chrono::steady_clock::now() - navigation_started_at_ >=
         std::chrono::milliseconds(getInput<int>("timeout_ms").value())) {
       navigation_->cancel();
       return fail("navigation_timeout");
@@ -92,7 +118,10 @@ private:
   }
   rclcpp::Node::SharedPtr node_;
   std::shared_ptr<TacticalNavigation> navigation_;
-  std::chrono::steady_clock::time_point started_;
+  std::string goal_, action_name_;
+  std::chrono::steady_clock::time_point wait_started_, navigation_started_at_;
+  bool navigation_started_{false};
+  bool waiting_reported_{false};
 };
 }  // namespace pb2025_sentry_behavior
 CreateRosNodePlugin(pb2025_sentry_behavior::TacticalNavigateToPoseAction, "TacticalNavigateToPose");

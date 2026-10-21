@@ -32,6 +32,7 @@ pb2025_sentry_behavior_server:
     navigation_action_name: navigate_to_pose
     navigation_timeout_ms: 60000
     navigation_cancel_timeout_ms: 2000
+    navigation_server_wait_timeout_ms: 10000
     action_failure_cooldown_ms: 5000
     cover_dwell_ms: 10000
     outpost_attack_timeout_ms: 60000

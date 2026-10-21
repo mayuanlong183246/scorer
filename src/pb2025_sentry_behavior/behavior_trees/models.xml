@@ -153,6 +153,7 @@
         <Action ID="TacticalNavigateToPose">
             <input_port name="action_name" type="std::string" default="navigate_to_pose">Nav2 action name</input_port>
             <input_port name="timeout_ms" type="int" default="60000">Per-leg navigation timeout</input_port>
+            <input_port name="server_wait_timeout_ms" type="int" default="10000">Nav2 server startup timeout</input_port>
             <input_port name="goal" type="std::string" />
         </Action>
         <Decorator ID="TickAfterTimeout">

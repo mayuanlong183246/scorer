@@ -218,8 +218,9 @@ void TacticalScorerNode::onTimer()
 
   RCLCPP_INFO_THROTTLE(
     get_logger(), *get_clock(), 1000,
-    "[TacticalScorer] decision_id=%u action=%s score=%.2f reasons=%zu rejected=%zu",
-    msg.decision_id, msg.action_name.c_str(), msg.score, msg.top_reasons.size(),
+    "[TacticalScorer] decision_id=%u action=%s score=%.2f emergency=%s reason=%s rejected=%zu",
+    msg.decision_id, msg.action_name.c_str(), msg.score, msg.emergency ? "true" : "false",
+    msg.top_reasons.empty() ? "none" : msg.top_reasons.front().c_str(),
     msg.rejected_actions.size());
 }
 

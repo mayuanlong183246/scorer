@@ -33,6 +33,9 @@ def main():
             future = client.call_async(GetParameters.Request(names=['use_sim_time', 'tick_frequency',
                                             'navigation_timeout_ms',
                                             'navigation_cancel_timeout_ms',
+                                            'navigation_server_wait_timeout_ms',
+                                            'referee_data_timeout_ms',
+                                            'navigation_action_name',
                                             'validate_navigation_goals']))
             rclpy.spin_until_future_complete(node, future, timeout_sec=3)
             assert future.done(), 'parameter request timed out'
@@ -41,7 +44,10 @@ def main():
             assert values[1].integer_value == 20
             assert values[2].integer_value == 180000
             assert values[3].integer_value == 2000
-            assert values[4].bool_value
+            assert values[4].integer_value == 10000
+            assert values[5].integer_value == 3000
+            assert values[6].string_value == '/navigate_to_pose'
+            assert values[7].bool_value
             deadline = time.monotonic() + 3
             while time.monotonic() < deadline:
                 rclpy.spin_once(node, timeout_sec=0.05)

@@ -112,6 +112,7 @@ SentryBehaviorServer::SentryBehaviorServer(const rclcpp::NodeOptions & options)
   node()->declare_parameter("gather_info_dwell_ms", 5000);
   const std::vector<std::pair<std::string, int>> tactical_parameters = {
     {"navigation_timeout_ms", 60000}, {"navigation_cancel_timeout_ms", 2000},
+    {"navigation_server_wait_timeout_ms", 10000},
     {"action_failure_cooldown_ms", 5000}, {"cover_dwell_ms", 10000},
     {"outpost_attack_timeout_ms", 60000}, {"resupply_timeout_ms", 30000},
     {"resupply_hp_target", 400}, {"resupply_ammo_target", 150},

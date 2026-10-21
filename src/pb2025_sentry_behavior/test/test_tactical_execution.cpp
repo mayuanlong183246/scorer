@@ -62,6 +62,7 @@ protected:
     set("navigation_action_name", std::string("navigate_to_pose"));
     set("navigation_timeout_ms", 1000);
     set("navigation_cancel_timeout_ms", 60);
+    set("navigation_server_wait_timeout_ms", 60);
     set("action_failure_cooldown_ms", 200);
     set("decision_timeout_ms", 1000);
     set("target_locked_timeout_ms", 60);
@@ -501,4 +502,26 @@ TEST_F(TacticalTest, MissingNavigationServerFailsWithoutSending)
       event.reason == "navigation_server_unavailable";
   }
   EXPECT_TRUE(unavailable);
+}
+
+TEST_F(TacticalTest, DelayedNavigationServerReceivesPendingGoal)
+{
+  set("navigation_action_name", std::string("/delayed/navigate_to_pose"));
+  set("navigation_server_wait_timeout_ms", 500);
+  run(80);
+  EXPECT_TRUE(requested.empty());
+  EXPECT_FALSE(has(6, "FAILED"));
+
+  auto delayed = rclcpp_action::create_server<Nav::Action>(node, "/delayed/navigate_to_pose",
+    [this](const rclcpp_action::GoalUUID &, std::shared_ptr<const Nav::Action::Goal> goal) {
+      requested.push_back(*goal);
+      return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+    }, [](std::shared_ptr<rclcpp_action::ServerGoalHandle<Nav::Action>>) {
+      return rclcpp_action::CancelResponse::ACCEPT;
+    }, [this](std::shared_ptr<rclcpp_action::ServerGoalHandle<Nav::Action>> handle) {
+      handles.push_back(handle);
+    });
+  ASSERT_TRUE(until([&] { return handles.size() == 1; }));
+  EXPECT_EQ(requested.size(), 1U);
+  EXPECT_FALSE(has(6, "FAILED"));
 }

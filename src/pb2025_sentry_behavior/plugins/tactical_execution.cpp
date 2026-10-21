@@ -174,6 +174,14 @@ private:
     event.world_state_id = decision_.world_state_id;
     event.state = state; event.reason = reason;
     events_->publish(event);
+    static constexpr const char * names[] = {
+      "HOLD_SAFE", "COVER_TEAMMATE", "ATTACK_OUTPOST", "RESUPPLY_HOME",
+      "DEFEND_HOME", "CAPTURE_POINT", "GATHER_INFO"};
+    const auto action_name = event.action < 7 ? names[event.action] : "UNKNOWN";
+    RCLCPP_INFO(
+      node_->get_logger(),
+      "[TacticalExecution] action=%s decision_id=%u state=%s reason=%s",
+      action_name, event.decision_id, state.c_str(), reason.c_str());
   }
   rclcpp::Node::SharedPtr node_;
   std::shared_ptr<TacticalNavigation> navigation_;

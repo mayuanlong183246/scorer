@@ -244,6 +244,21 @@ TEST_F(ScorerTest, DefenseThreatRequiresThreeFreshObservationsForPersistence)
   EXPECT_EQ(factor("DEFEND_HOME", "threat_persistence"), 0.0);
 }
 
+TEST_F(ScorerTest, ThreeSecondRefereeTimeoutToleratesOneHertzJitter)
+{
+  start({rclcpp::Parameter("referee_data_timeout_ms", 3000)});
+  ASSERT_NE(lastDecision().action, Decision::HOLD_SAFE);
+
+  publish_event = false;
+  run(1200);
+  EXPECT_NE(lastDecision().action, Decision::HOLD_SAFE);
+
+  run(1900);
+  EXPECT_EQ(lastDecision().action, Decision::HOLD_SAFE);
+  ASSERT_FALSE(lastDecision().top_reasons.empty());
+  EXPECT_EQ(lastDecision().top_reasons.front(), "stale_event_data");
+}
+
 TEST_F(ScorerTest, CaptureUsesPointValueAndMatchPhase)
 {
   hp.red_outpost_hp = 0;
